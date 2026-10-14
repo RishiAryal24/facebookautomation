@@ -60,6 +60,13 @@ class FacebookPage(Base):
     max_actions_per_hour = Column(Integer, default=30)
     cooldown_seconds = Column(Integer, default=15)
     
+    # Daily Automated Post Generation
+    daily_posts_target = Column(Integer, default=1)
+    post_auto_publish = Column(Boolean, default=False) # False = draft queue, True = auto-publish
+    posting_schedule_times = Column(String(255), default="10:00,18:00")
+    post_topics_prompt = Column(Text, default="Product highlights, special discounts, helpful tips, and engagement questions.")
+    posts_created_today = Column(Integer, default=0)
+
     # Metrics
     total_comments_replied = Column(Integer, default=0)
     total_likes_given = Column(Integer, default=0)
@@ -85,6 +92,9 @@ class Post(Base):
     like_count = Column(Integer, default=0)
     comment_count = Column(Integer, default=0)
     is_monitored = Column(Boolean, default=True)
+    is_ai_generated = Column(Boolean, default=False)
+    status = Column(String(50), default="published") # draft, scheduled, published, failed
+    scheduled_for = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utcnow)
     
     page = relationship("FacebookPage", back_populates="posts")
