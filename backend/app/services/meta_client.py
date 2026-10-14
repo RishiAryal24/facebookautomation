@@ -114,4 +114,28 @@ class MetaGraphClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def create_page_post(self, page_id: str, message: str, access_token: str, media_url: Optional[str] = None) -> Dict[str, Any]:
+        """Publish a new status or photo post to the Facebook Page feed."""
+        if not access_token or access_token.startswith("mock_"):
+            timestamp = int(datetime.now().timestamp())
+            return {
+                "id": f"{page_id}_post_{timestamp}",
+                "status": "success",
+                "simulated": True,
+                "permalink_url": f"https://facebook.com/{page_id}/posts/{timestamp}"
+            }
+
+        url = f"{self.base_url}/{page_id}/feed"
+        data = {
+            "message": message,
+            "access_token": access_token
+        }
+        if media_url:
+            data["link"] = media_url
+
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(url, data=data)
+            resp.raise_for_status()
+            return resp.json()
+
 meta_client = MetaGraphClient()

@@ -50,6 +50,11 @@ class FacebookPageBase(BaseModel):
     operating_hours_end: str = "22:00"
     max_actions_per_hour: int = 30
     cooldown_seconds: int = 15
+    daily_posts_target: int = 1
+    post_auto_publish: bool = False
+    posting_schedule_times: str = "10:00,18:00"
+    post_topics_prompt: Optional[str] = "Product highlights, special discounts, helpful tips, and engagement questions."
+    posts_created_today: int = 0
 
 class FacebookPageCreate(FacebookPageBase):
     access_token: Optional[str] = None
@@ -67,6 +72,10 @@ class FacebookPageUpdate(BaseModel):
     operating_hours_end: Optional[str] = None
     max_actions_per_hour: Optional[int] = None
     cooldown_seconds: Optional[int] = None
+    daily_posts_target: Optional[int] = None
+    post_auto_publish: Optional[bool] = None
+    posting_schedule_times: Optional[str] = None
+    post_topics_prompt: Optional[str] = None
     access_token: Optional[str] = None
 
 class FacebookPageRead(FacebookPageBase):
@@ -92,7 +101,25 @@ class PostRead(BaseModel):
     like_count: int
     comment_count: int
     is_monitored: bool
+    is_ai_generated: bool = False
+    status: str = "published"
+    scheduled_for: Optional[datetime] = None
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class PostDraftGenerateRequest(BaseModel):
+    page_id: int
+    topic: Optional[str] = None
+    language: Optional[str] = "ne" # 'ne', 'en', 'bilingual'
+    tone: Optional[str] = "promotional" # promotional, tips, festive, engagement
+    include_image: bool = True
+    auto_publish: bool = False
+
+class PostPublishRequest(BaseModel):
+    edited_message: Optional[str] = None
+    media_url: Optional[str] = None
 
     class Config:
         from_attributes = True

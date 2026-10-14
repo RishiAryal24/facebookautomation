@@ -10,9 +10,51 @@ from app.models.entities import (
 )
 
 async def init_models():
-    """Create all tables in the database."""
+    """Create all tables and auto-migrate newly added columns if using SQLite."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Safe migration for new columns on existing SQLite database
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE facebook_pages ADD COLUMN daily_posts_target INTEGER DEFAULT 1"))
+        except Exception:
+            pass
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE facebook_pages ADD COLUMN post_auto_publish BOOLEAN DEFAULT 0"))
+        except Exception:
+            pass
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE facebook_pages ADD COLUMN posting_schedule_times VARCHAR(255) DEFAULT '10:00,18:00'"))
+        except Exception:
+            pass
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE facebook_pages ADD COLUMN post_topics_prompt TEXT DEFAULT 'Product highlights and deals'"))
+        except Exception:
+            pass
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE facebook_pages ADD COLUMN posts_created_today INTEGER DEFAULT 0"))
+        except Exception:
+            pass
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE posts ADD COLUMN is_ai_generated BOOLEAN DEFAULT 0"))
+        except Exception:
+            pass
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE posts ADD COLUMN status VARCHAR(50) DEFAULT 'published'"))
+        except Exception:
+            pass
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE posts ADD COLUMN scheduled_for DATETIME"))
+        except Exception:
+            pass
 
 async def seed_data():
     """Seed initial administrator, restricted keywords, demo page, and sample bilingual comments."""

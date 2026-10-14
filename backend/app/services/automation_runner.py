@@ -218,4 +218,126 @@ class AutomationEngine:
             await db.commit()
             return False
 
+    async def generate_daily_post(
+        self,
+        db: AsyncSession,
+        page: FacebookPage,
+        topic: Optional[str] = None,
+        language: str = "ne",
+        tone: str = "promotional",
+        auto_publish: bool = False
+    ) -> Post:
+        """Generate and optionally publish a daily automated post for a Facebook Page."""
+        ai_post = await gemini_service.generate_social_post(
+            brand_context=page.brand_context or "",
+            topic=topic or page.post_topics_prompt or "Special product deals and customer benefits",
+            language=language or page.default_language or "ne",
+            tone=tone or page.response_tone or "promotional"
+        )
+
+        message = ai_post.get("message", "Daily Post Update")
+        media_url = ai_post.get("media_url")
+        should_publish = auto_publish or page.post_auto_publish
+
+        timestamp = int(datetime.now().timestamp())
+        meta_post_id = f"{page.meta_page_id}_draft_{timestamp}"
+        status_val = "draft"
+        permalink = None
+
+        if should_publish and page.automation_enabled:
+            access_token = decrypt_token(page.access_token_enc) if page.access_token_enc else ""
+            try:
+                res = await meta_client.create_page_post(
+                    page_id=page.meta_page_id,
+                    message=message,
+                    access_token=access_token,
+                    media_url=media_url
+                )
+                meta_post_id = res.get("id", meta_post_id)
+                permalink = res.get("permalink_url")
+                status_val = "published"
+                page.posts_created_today = (page.posts_created_today or 0) + 1
+
+                log = ActionLog(
+                    page_id=page.id,
+                    action_type="daily_post_published",
+                    status=ActionStatus.SUCCESS,
+                    details={"post_id": meta_post_id, "topic": topic, "auto_published": True}
+                )
+                db.add(log)
+            except Exception as e:
+                status_val = "failed"
+                log = ActionLog(
+                    page_id=page.id,
+                    action_type="daily_post_published",
+                    status=ActionStatus.FAILED,
+                    error_message=str(e)
+                )
+                db.add(log)
+
+        post = Post(
+            meta_post_id=meta_post_id,
+            page_id=page.id,
+            message=message,
+            media_url=media_url,
+            permalink_url=permalink,
+            is_monitored=True,
+            is_ai_generated=True,
+            status=status_val,
+            published_at=datetime.now(timezone.utc) if status_val == "published" else None
+        )
+        db.add(post)
+        await db.commit()
+        await db.refresh(post)
+        return post
+
+    async def publish_draft_post(
+        self,
+        db: AsyncSession,
+        post: Post,
+        edited_message: Optional[str] = None,
+        media_url: Optional[str] = None
+    ) -> bool:
+        """Publish a pre-generated draft post to Facebook."""
+        page = post.page
+        message_to_post = edited_message or post.message
+        img_to_post = media_url or post.media_url
+        access_token = decrypt_token(page.access_token_enc) if page.access_token_enc else ""
+
+        try:
+            res = await meta_client.create_page_post(
+                page_id=page.meta_page_id,
+                message=message_to_post,
+                access_token=access_token,
+                media_url=img_to_post
+            )
+            post.meta_post_id = res.get("id", post.meta_post_id)
+            post.permalink_url = res.get("permalink_url", post.permalink_url)
+            post.status = "published"
+            post.message = message_to_post
+            post.media_url = img_to_post
+            post.published_at = datetime.now(timezone.utc)
+            page.posts_created_today = (page.posts_created_today or 0) + 1
+
+            log = ActionLog(
+                page_id=page.id,
+                action_type="draft_post_published",
+                status=ActionStatus.SUCCESS,
+                details={"post_id": post.meta_post_id, "edited": bool(edited_message)}
+            )
+            db.add(log)
+            await db.commit()
+            return True
+        except Exception as e:
+            post.status = "failed"
+            log = ActionLog(
+                page_id=page.id,
+                action_type="draft_post_published",
+                status=ActionStatus.FAILED,
+                error_message=str(e)
+            )
+            db.add(log)
+            await db.commit()
+            return False
+
 automation_engine = AutomationEngine()

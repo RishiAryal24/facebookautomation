@@ -134,4 +134,69 @@ Generate the JSON response conforming to the system rules.
             print(f"Gemini API call failed, falling back to smart local template: {e}")
             return self._generate_fallback_response(comment_text, post_context, tone, target_language)
 
+    async def generate_social_post(
+        self,
+        brand_context: str = "",
+        topic: Optional[str] = None,
+        language: str = "ne", # 'ne', 'en', 'bilingual'
+        tone: str = "promotional"
+    ) -> Dict[str, Any]:
+        """Generate full engaging social media post caption with hashtags, emojis, and relevant image."""
+        default_images = [
+            "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&q=80",
+            "https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=800&q=80",
+            "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80",
+            "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=800&q=80",
+            "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80"
+        ]
+        import random
+        selected_img = random.choice(default_images)
+
+        if not self._client:
+            # High quality local fallback template
+            if language == "ne":
+                post_text = f"🎉 {topic or 'नयाँ सामानहरू विशेष छुटमा उपलब्ध छन्!'} 🛍️\n\nउच्च गुणस्तरका उत्कृष्ट सामानहरू अब नेपालभर होम डेलिभरीका साथ! आजै अर्डर गरी विशेष छुटको फाइदा लिनुहोस्।\n\n📞 सम्पर्क: इनबक्स (DM) गर्नुहोस् वा कमेन्ट गर्नुहोस्!\n\n#PyLoom #OnlineShoppingNepal #ExclusiveOffer #NepalDeals"
+            elif language == "bilingual":
+                post_text = f"✨ Special Announcement / विशेष जानकारी! ✨\n\n{topic or 'Exciting new arrivals are here at unbeatable prices!'}\nनयाँ सामानहरू आइपुगेका छन्! नेपालभर डेलिभरी सुविधा उपलब्ध छ।\n\n👉 Comment 'INTERESTED' or DM us for order details!\n#PyLoom #DealsNepal #SpecialOffer"
+            else:
+                post_text = f"🚀 {topic or 'Elevate your lifestyle with our premium collection!'} 🌟\n\nTop quality, reliable performance, and express delivery nationwide. Don't miss out on this limited-time offer!\n\n💬 Drop a comment below or send us a DM to order today!\n\n#PyLoom #QualityFirst #ShopNow #Trending"
+            return {
+                "message": post_text,
+                "media_url": selected_img,
+                "source": "smart_local_template"
+            }
+
+        prompt = f"""
+Create an engaging, viral-ready Facebook Page post for a business page.
+Brand Context: {brand_context or 'PyLoom client commercial business'}
+Post Topic / Theme: {topic or 'Exciting product showcase and customer appreciation'}
+Language: {'Nepali (Devanagari script)' if language == 'ne' else 'English' if language == 'en' else 'Bilingual (Nepali and English)'}
+Tone: {tone}
+
+Include:
+- Catchy hook with emojis
+- Value proposition or interesting message
+- Clear Call to Action (CTA) encouraging users to comment or send a message
+- 3 to 5 relevant hashtags
+
+Format: Output pure text for the post caption.
+"""
+        try:
+            response = self._client.models.generate_content(
+                model=self.model_name,
+                contents=prompt
+            )
+            return {
+                "message": response.text.strip(),
+                "media_url": selected_img,
+                "source": "gemini_api"
+            }
+        except Exception as err:
+            print(f"Gemini post generation failed: {err}")
+            return {
+                "message": f"🎉 {topic or 'विशेष अफर!'} \n\nथप जानकारीको लागि हामीलाई कमेन्ट वा इनबक्स गर्नुहोस्। #PyLoom",
+                "media_url": selected_img,
+                "source": "fallback"
+            }
+
 gemini_service = GeminiService()
