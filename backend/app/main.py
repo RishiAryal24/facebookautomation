@@ -12,6 +12,7 @@ from app.api.v1.comments import router as comments_router
 from app.api.v1.rules import router as rules_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.webhook import router as webhook_router
+from app.services.scheduler import start_scheduler, stop_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -19,8 +20,12 @@ async def lifespan(app: FastAPI):
     await init_models()
     await seed_data()
     print("Database initialized and demo data seeded successfully.")
+    
+    # Start automated daily posting & monitoring background scheduler
+    start_scheduler()
     yield
     # Shutdown
+    stop_scheduler()
     print("Application shutting down.")
 
 app = FastAPI(
