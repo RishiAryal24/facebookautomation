@@ -1,4 +1,3 @@
-import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +11,8 @@ from app.api.v1.comments import router as comments_router
 from app.api.v1.rules import router as rules_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.webhook import router as webhook_router
+from app.api.v1.ads import router as ads_router
+from app.api.v1.system import router as system_router
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 @asynccontextmanager
@@ -38,7 +39,7 @@ app = FastAPI(
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins for easy dev and production routing
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,6 +53,8 @@ app.include_router(comments_router, prefix=settings.API_V1_STR)
 app.include_router(rules_router, prefix=settings.API_V1_STR)
 app.include_router(reports_router, prefix=settings.API_V1_STR)
 app.include_router(webhook_router, prefix=settings.API_V1_STR)
+app.include_router(ads_router, prefix=settings.API_V1_STR)
+app.include_router(system_router, prefix=settings.API_V1_STR)
 
 @app.get("/health", tags=["Health"])
 async def health_check():

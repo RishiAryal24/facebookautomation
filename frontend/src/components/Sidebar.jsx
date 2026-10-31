@@ -6,7 +6,9 @@ import {
   Newspaper, 
   Sliders, 
   FileText, 
-  FlaskConical 
+  FlaskConical,
+  Megaphone,
+  Sparkles,
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, pendingCount = 0 }) {
@@ -21,6 +23,8 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 0 }) {
     },
     { id: 'pages', label: 'Connected Pages', icon: Globe2 },
     { id: 'posts', label: 'Posts & Feed', icon: Newspaper },
+    { id: 'content', label: 'AI Content', icon: Sparkles },
+    { id: 'ads', label: 'Advertising', icon: Megaphone },
     { id: 'rules', label: 'Rules & Keywords', icon: Sliders },
     { id: 'logs', label: 'Audit Logs', icon: FileText },
     { id: 'simulator', label: 'Live Simulator', icon: FlaskConical },

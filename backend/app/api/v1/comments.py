@@ -6,16 +6,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.core.database import get_db
-from app.models.entities import Comment, CommentStatus, Post, FacebookPage, ActionLog, ActionStatus
+from app.models.entities import Comment, CommentStatus, Post, FacebookPage, ActionLog, ActionStatus, UserRole
 from app.schemas.schemas import (
     CommentRead, CommentApproveRequest, CommentRejectRequest,
     CommentRegenerateRequest, SimulateCommentRequest
 )
 from app.services.automation_runner import automation_engine
-from app.services.gemini_service import gemini_service
+from app.services.gemini_service import GeminiServiceError, gemini_service
+from app.api.v1.auth import get_current_user, require_roles
 
-router = APIRouter(prefix="/comments", tags=["Comments & Approval Queue"])
+router = APIRouter(
+    prefix="/comments",
+    tags=["Comments & Approval Queue"],
+    dependencies=[Depends(get_current_user)],
+)
+COMMENT_OPERATOR_ROLES = (
+    UserRole.SUPER_ADMIN,
+    UserRole.COMPANY_ADMIN,
+    UserRole.ADMIN,
+    UserRole.OPERATOR,
+)
 
 @router.get("/queue", response_model=List[CommentRead])
 async def get_approval_queue(
@@ -74,7 +86,11 @@ async def list_comments(
         output.append(c_read)
     return output
 
-@router.post("/{comment_id}/approve", response_model=CommentRead)
+@router.post(
+    "/{comment_id}/approve",
+    response_model=CommentRead,
+    dependencies=[Depends(require_roles(*COMMENT_OPERATOR_ROLES))],
+)
 async def approve_comment(
     comment_id: int,
     approve_data: CommentApproveRequest,
@@ -86,6 +102,15 @@ async def approve_comment(
     comment = res.scalar_one_or_none()
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
+    if comment.is_simulated:
+        raise HTTPException(status_code=409, detail="Simulated comments cannot be published")
+    if not (approve_data.edited_reply or comment.ai_draft_reply or "").strip():
+        raise HTTPException(status_code=422, detail="A non-empty reply is required before publishing")
+    if settings.SIMULATION_MODE:
+        raise HTTPException(
+            status_code=409,
+            detail="Live Facebook comment publishing is disabled while SIMULATION_MODE is enabled.",
+        )
 
     success = await automation_engine.approve_and_publish_comment(
         db=db,
@@ -102,7 +127,11 @@ async def approve_comment(
     c_read.post_message = comment.post.message
     return c_read
 
-@router.post("/{comment_id}/reject", response_model=CommentRead)
+@router.post(
+    "/{comment_id}/reject",
+    response_model=CommentRead,
+    dependencies=[Depends(require_roles(*COMMENT_OPERATOR_ROLES))],
+)
 async def reject_comment(
     comment_id: int,
     reject_data: CommentRejectRequest,
@@ -133,7 +162,11 @@ async def reject_comment(
     c_read.post_message = comment.post.message
     return c_read
 
-@router.post("/{comment_id}/regenerate", response_model=CommentRead)
+@router.post(
+    "/{comment_id}/regenerate",
+    response_model=CommentRead,
+    dependencies=[Depends(require_roles(*COMMENT_OPERATOR_ROLES))],
+)
 async def regenerate_comment(
     comment_id: int,
     regen_data: CommentRegenerateRequest,
@@ -149,21 +182,46 @@ async def regenerate_comment(
     tone = regen_data.tone or comment.page.response_tone or "friendly"
     target_lang = regen_data.target_language or comment.detected_language
 
-    ai_result = await gemini_service.generate_comment_reply(
-        comment_text=comment.message,
-        post_context=comment.post.message if comment.post else "",
-        brand_context=comment.page.brand_context if comment.page else "",
-        tone=tone,
-        target_language=target_lang,
-        custom_instructions=regen_data.custom_instructions
-    )
+    try:
+        ai_result = await gemini_service.generate_comment_reply(
+            comment_text=comment.message,
+            post_context=comment.post.message if comment.post else "",
+            brand_context=comment.page.brand_context if comment.page else "",
+            tone=tone,
+            target_language=target_lang,
+            custom_instructions=regen_data.custom_instructions
+        )
+    except GeminiServiceError as exc:
+        db.add(
+            ActionLog(
+                page_id=comment.page_id,
+                action_type="comment_reply_regenerated",
+                status=ActionStatus.FAILED,
+                error_message=str(exc),
+                details={"comment_id": comment.meta_comment_id},
+            )
+        )
+        await db.commit()
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     comment.ai_draft_reply = ai_result.get("reply", comment.ai_draft_reply)
+    comment.ai_generation_source = ai_result.get("source")
     if "detected_language" in ai_result:
         comment.detected_language = ai_result["detected_language"]
     if "sentiment" in ai_result:
         comment.sentiment = ai_result["sentiment"]
 
+    db.add(
+        ActionLog(
+            page_id=comment.page_id,
+            action_type="comment_reply_regenerated",
+            status=ActionStatus.SUCCESS,
+            details={
+                "comment_id": comment.meta_comment_id,
+                "generation_source": ai_result.get("source"),
+            },
+        )
+    )
     await db.commit()
     await db.refresh(comment)
 
@@ -172,7 +230,11 @@ async def regenerate_comment(
     c_read.post_message = comment.post.message
     return c_read
 
-@router.post("/simulate", response_model=CommentRead)
+@router.post(
+    "/simulate",
+    response_model=CommentRead,
+    dependencies=[Depends(require_roles(*COMMENT_OPERATOR_ROLES))],
+)
 async def simulate_incoming_comment(
     sim_data: SimulateCommentRequest,
     db: AsyncSession = Depends(get_db)
@@ -214,8 +276,14 @@ async def simulate_incoming_comment(
         sender_name=sim_data.sender_name,
         sender_id=sender_id,
         message=sim_data.message,
-        meta_comment_id=meta_comment_id
+        meta_comment_id=meta_comment_id,
+        is_simulated=True,
     )
+    if comment is None:
+        existing_result = await db.execute(
+            select(Comment).where(Comment.meta_comment_id == meta_comment_id)
+        )
+        comment = existing_result.scalar_one()
 
     c_read = CommentRead.model_validate(comment)
     c_read.page_name = page.name

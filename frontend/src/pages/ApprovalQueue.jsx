@@ -157,6 +157,11 @@ export default function ApprovalQueue({ onQueueUpdated }) {
                 <div className="p-4 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
                   <div className="flex items-center space-x-2">
                     <span className="font-bold text-slate-900 text-sm">{comment.sender_name}</span>
+                    {comment.is_simulated && (
+                      <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">
+                        Simulation only
+                      </span>
+                    )}
                     <span className="text-slate-400">•</span>
                     <span className="text-slate-500 font-medium">{comment.page_name || 'Facebook Page'}</span>
                     <span className="text-slate-400">•</span>
@@ -173,7 +178,11 @@ export default function ApprovalQueue({ onQueueUpdated }) {
                         : 'bg-blue-50 text-blue-700 border border-blue-200'
                     }`}>
                       <Languages className="w-3 h-3" />
-                      {comment.detected_language === 'ne' ? 'नेपाली (Nepali)' : 'English'}
+                      {comment.detected_language === 'ne'
+                        ? 'नेपाली (Nepali)'
+                        : comment.detected_language === 'romanized_ne'
+                          ? 'Romanized Nepali'
+                          : 'English'}
                     </span>
 
                     {/* Sentiment Badge */}
@@ -193,7 +202,7 @@ export default function ApprovalQueue({ onQueueUpdated }) {
                     {comment.error_message && (
                       <span className="px-2 py-0.5 rounded-md font-semibold text-[11px] bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3 text-rose-600" />
-                        Flagged
+                        Review required
                       </span>
                     )}
                   </div>
@@ -231,7 +240,14 @@ export default function ApprovalQueue({ onQueueUpdated }) {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-1.5 text-xs font-bold text-blue-700">
                         <Sparkles className="w-4 h-4 text-blue-600" />
-                        <span>Gemini AI Bilingual Draft</span>
+                        <span>Suggested Reply</span>
+                        {comment.ai_generation_source && (
+                          <span className="font-medium text-slate-500">
+                            {comment.ai_generation_source === 'local_fallback'
+                              ? 'Local template — verify before publishing'
+                              : 'Gemini'}
+                          </span>
+                        )}
                       </div>
 
                       {/* Quick Tone & Regenerate Controls */}
@@ -288,7 +304,7 @@ export default function ApprovalQueue({ onQueueUpdated }) {
                       </div>
                     ) : (
                       <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/70 text-sm text-slate-900 font-normal leading-relaxed relative group">
-                        {comment.ai_draft_reply}
+                        {comment.ai_draft_reply || 'No draft is available. Regenerate after checking AI configuration, or enter a reply manually.'}
                         <button
                           onClick={() => startEditing(comment)}
                           className="absolute top-2 right-2 p-1.5 bg-white/90 hover:bg-white text-slate-600 rounded-lg shadow-xs opacity-0 group-hover:opacity-100 transition-opacity"
@@ -336,14 +352,20 @@ export default function ApprovalQueue({ onQueueUpdated }) {
                         </button>
                       )}
 
-                      <button
-                        onClick={() => handleApprove(comment.id)}
-                        disabled={isBusy}
-                        className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>{isEditing ? 'Save & Publish' : 'Approve & Publish'}</span>
-                      </button>
+                      {comment.is_simulated ? (
+                        <span className="text-xs font-semibold text-amber-800">
+                          Simulated comments cannot be published
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleApprove(comment.id)}
+                          disabled={isBusy || !(isEditing ? editedText.trim() : comment.ai_draft_reply?.trim())}
+                          className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>{isEditing ? 'Save & Publish' : 'Approve & Publish'}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

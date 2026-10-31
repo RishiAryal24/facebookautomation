@@ -7,11 +7,17 @@ from sqlalchemy import select, func, update
 from app.core.database import get_db
 from app.models.entities import (
     FacebookPage, Post, Comment, CommentStatus,
-    ActionLog, ActionStatus
+    ActionLog, ActionStatus, UserRole
 )
 from app.schemas.schemas import DashboardMetrics, ActionLogRead
+from app.api.v1.auth import get_current_user, require_roles
 
-router = APIRouter(prefix="/reports", tags=["Reports & Analytics"])
+router = APIRouter(
+    prefix="/reports",
+    tags=["Reports & Analytics"],
+    dependencies=[Depends(get_current_user)],
+)
+ADMIN_ROLES = (UserRole.SUPER_ADMIN, UserRole.COMPANY_ADMIN, UserRole.ADMIN)
 
 @router.get("/metrics", response_model=DashboardMetrics)
 async def get_metrics(db: AsyncSession = Depends(get_db)):
@@ -84,7 +90,10 @@ async def list_action_logs(
     result = await db.execute(query)
     return result.scalars().all()
 
-@router.post("/emergency-stop")
+@router.post(
+    "/emergency-stop",
+    dependencies=[Depends(require_roles(*ADMIN_ROLES))],
+)
 async def emergency_stop_all(db: AsyncSession = Depends(get_db)):
     """EMERGENCY KILL SWITCH: Immediately halts automation across all connected Facebook Pages."""
     await db.execute(
@@ -99,7 +108,10 @@ async def emergency_stop_all(db: AsyncSession = Depends(get_db)):
     await db.commit()
     return {"status": "success", "message": "All automations halted globally"}
 
-@router.post("/resume-all")
+@router.post(
+    "/resume-all",
+    dependencies=[Depends(require_roles(*ADMIN_ROLES))],
+)
 async def resume_all_automations(db: AsyncSession = Depends(get_db)):
     """Resume automation across all connected Facebook Pages."""
     await db.execute(

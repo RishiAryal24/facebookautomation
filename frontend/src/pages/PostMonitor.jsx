@@ -8,28 +8,50 @@ import {
   Eye, 
   EyeOff, 
   Sparkles, 
-  Send, 
   Trash2, 
   Edit3, 
-  CheckCircle2, 
-  Plus, 
   Clock 
 } from 'lucide-react';
 import api from '../api';
 
-export default function PostMonitor() {
+export default function PostMonitor({ onNavigate }) {
   const [posts, setPosts] = useState([]);
+  const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingPages, setLoadingPages] = useState(true);
   const [activeTab, setActiveTab] = useState('all'); // 'all', 'drafts', 'published'
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [publishingId, setPublishingId] = useState(null);
+  const [editingDraftId, setEditingDraftId] = useState(null);
+  const [draftMessage, setDraftMessage] = useState('');
+  const [draftMediaUrl, setDraftMediaUrl] = useState('');
+  const [savingDraft, setSavingDraft] = useState(false);
 
   // Post Generator Form
+  const [selectedPageId, setSelectedPageId] = useState('');
   const [postTopic, setPostTopic] = useState('चाडपर्वको विशेष अफर र नयाँ सामानहरू');
   const [postLang, setPostLang] = useState('ne');
   const [postTone, setPostTone] = useState('promotional');
-  const [autoPublishDirect, setAutoPublishDirect] = useState(false);
+
+  const fetchPages = async () => {
+    setLoadingPages(true);
+    try {
+      const res = await api.get('/pages/');
+      const connectedPages = res.data.filter((page) => page.is_connected);
+      setPages(connectedPages);
+      setSelectedPageId((currentPageId) =>
+        connectedPages.some((page) => String(page.id) === currentPageId)
+          ? currentPageId
+          : String(connectedPages[0]?.id || '')
+      );
+    } catch (err) {
+      console.error('Failed to load connected Pages:', err);
+      setPages([]);
+      setSelectedPageId('');
+    } finally {
+      setLoadingPages(false);
+    }
+  };
 
   const fetchPosts = async () => {
     setLoading(true);
@@ -45,6 +67,7 @@ export default function PostMonitor() {
 
   useEffect(() => {
     fetchPosts();
+    fetchPages();
   }, []);
 
   const handleToggleMonitoring = async (postId) => {
@@ -61,15 +84,14 @@ export default function PostMonitor() {
     setGenerating(true);
     try {
       await api.post('/posts/generate-draft', {
-        page_id: 1, // Default connected page
+        page_id: Number(selectedPageId),
         topic: postTopic,
         language: postLang,
         tone: postTone,
-        auto_publish: autoPublishDirect
       });
       setShowGenerateModal(false);
       await fetchPosts();
-      setActiveTab(autoPublishDirect ? 'published' : 'drafts');
+      setActiveTab('drafts');
     } catch (err) {
       alert('Generation failed: ' + err.message);
     } finally {
@@ -77,20 +99,25 @@ export default function PostMonitor() {
     }
   };
 
-  const handlePublishDraft = async (postId, currentMessage, currentMedia) => {
-    const confirmed = confirm('Publish this AI-generated post live to your Facebook Page now?');
-    if (!confirmed) return;
-    setPublishingId(postId);
+  const handleEditDraft = (post) => {
+    setEditingDraftId(post.id);
+    setDraftMessage(post.message || '');
+    setDraftMediaUrl(post.media_url || '');
+  };
+
+  const handleSaveDraft = async (postId) => {
+    setSavingDraft(true);
     try {
-      await api.post(`/posts/${postId}/publish`, {
-        edited_message: currentMessage,
-        media_url: currentMedia
+      await api.put(`/posts/${postId}/draft`, {
+        message: draftMessage,
+        media_url: draftMediaUrl || null,
       });
+      setEditingDraftId(null);
       await fetchPosts();
     } catch (err) {
-      alert('Publishing failed: ' + err.message);
+      alert('Failed to save draft: ' + err.message);
     } finally {
-      setPublishingId(null);
+      setSavingDraft(false);
     }
   };
 
@@ -106,11 +133,12 @@ export default function PostMonitor() {
 
   const filteredPosts = posts.filter((p) => {
     if (activeTab === 'drafts') return p.status === 'draft';
-    if (activeTab === 'published') return p.status !== 'draft';
+    if (activeTab === 'published') return p.status === 'published' && !p.is_simulated;
     return true;
   });
 
   const draftCount = posts.filter((p) => p.status === 'draft').length;
+  const publishedCount = posts.filter((p) => p.status === 'published' && !p.is_simulated).length;
 
   return (
     <div className="space-y-6">
@@ -172,7 +200,7 @@ export default function PostMonitor() {
             activeTab === 'published' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          Published to Facebook ({posts.length - draftCount})
+          Published to Facebook ({publishedCount})
         </button>
       </div>
 
@@ -194,7 +222,6 @@ export default function PostMonitor() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {filteredPosts.map((post) => {
             const isDraft = post.status === 'draft';
-            const isPublishing = publishingId === post.id;
 
             return (
               <div
@@ -203,12 +230,27 @@ export default function PostMonitor() {
                   isDraft ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-200'
                 }`}
               >
+                {post.is_simulated && (
+                  <div className="bg-amber-100 px-4 py-2 text-xs font-semibold text-amber-900">
+                    Simulation record — this post was not published to Facebook.
+                  </div>
+                )}
+                {post.status === 'pending_verification' && (
+                  <div className="bg-orange-100 px-4 py-2 text-xs font-semibold text-orange-900">
+                    Publication is unverified. Check the Facebook Page before retrying.
+                  </div>
+                )}
+                {post.status === 'failed' && (
+                  <div className="bg-rose-100 px-4 py-2 text-xs font-semibold text-rose-900">
+                    Facebook did not confirm this post. Review the Action Log.
+                  </div>
+                )}
                 <div>
                   {/* Status Banner for Draft */}
                   {isDraft && (
                     <div className="bg-amber-500 text-white px-4 py-1.5 text-[11px] font-bold flex items-center justify-between">
                       <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> AI Post Draft (Pending Review)
+                        <Clock className="w-3 h-3" /> Post Draft (Pending Review)
                       </span>
                       <span>Ready to Publish</span>
                     </div>
@@ -223,7 +265,8 @@ export default function PostMonitor() {
                       />
                       {post.is_ai_generated && (
                         <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/70 text-white text-[10px] font-semibold backdrop-blur-xs flex items-center gap-1">
-                          <Sparkles className="w-3 h-3 text-amber-400" /> AI Created
+                          <Sparkles className="w-3 h-3 text-amber-400" />
+                          {post.generation_source === 'local_fallback' ? 'Local template' : 'AI Created'}
                         </span>
                       )}
                     </div>
@@ -235,31 +278,87 @@ export default function PostMonitor() {
                       <span>{new Date(post.created_at).toLocaleDateString()}</span>
                     </div>
 
-                    <p className="text-sm text-slate-800 leading-relaxed font-normal whitespace-pre-line">
-                      {post.message || 'No caption text.'}
-                    </p>
+                    {isDraft && editingDraftId === post.id ? (
+                      <div className="space-y-2">
+                        <label className="block text-xs font-semibold text-slate-600" htmlFor={`draft-message-${post.id}`}>
+                          Draft caption
+                        </label>
+                        <textarea
+                          id={`draft-message-${post.id}`}
+                          rows={6}
+                          value={draftMessage}
+                          onChange={(event) => setDraftMessage(event.target.value)}
+                          className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-800"
+                        />
+                        <label className="block text-xs font-semibold text-slate-600" htmlFor={`draft-media-${post.id}`}>
+                          Media URL (optional)
+                        </label>
+                        <input
+                          id={`draft-media-${post.id}`}
+                          type="url"
+                          value={draftMediaUrl}
+                          onChange={(event) => setDraftMediaUrl(event.target.value)}
+                          className="w-full rounded-xl border border-slate-300 bg-white p-2 text-sm text-slate-800"
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-800 leading-relaxed font-normal whitespace-pre-line">
+                        {post.message || 'No caption text.'}
+                      </p>
+                    )}
+                    {post.generation_source === 'local_fallback' && (
+                      <p className="text-xs font-semibold text-amber-700">
+                        Local template draft — review and verify all details before publishing.
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
                   {isDraft ? (
                     <div className="flex items-center justify-between w-full">
-                      <button
-                        onClick={() => handleDeletePost(post.id)}
-                        className="text-rose-600 hover:text-rose-800 flex items-center gap-1 font-semibold"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Discard</span>
-                      </button>
-
-                      <button
-                        onClick={() => handlePublishDraft(post.id, post.message, post.media_url)}
-                        disabled={isPublishing}
-                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>{isPublishing ? 'Publishing...' : 'Publish to Facebook'}</span>
-                      </button>
+                      {editingDraftId === post.id ? (
+                        <>
+                          <button
+                            onClick={() => setEditingDraftId(null)}
+                            className="text-slate-600 hover:text-slate-800 font-semibold"
+                          >
+                            Cancel edit
+                          </button>
+                          <button
+                            onClick={() => handleSaveDraft(post.id)}
+                            disabled={savingDraft || !draftMessage.trim()}
+                            className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-xs"
+                          >
+                            {savingDraft ? 'Saving...' : 'Save draft'}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleDeletePost(post.id)}
+                            className="text-rose-600 hover:text-rose-800 flex items-center gap-1 font-semibold"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Discard</span>
+                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleEditDraft(post)}
+                              className="px-3 py-1.5 border border-slate-300 text-slate-700 font-bold rounded-xl flex items-center gap-1"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => onNavigate?.('content')}
+                              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
+                            >
+                              <span>Review &amp; approve</span>
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -312,13 +411,44 @@ export default function PostMonitor() {
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
             <div className="flex items-center space-x-2 text-indigo-600 font-bold text-lg">
               <Sparkles className="w-5 h-5" />
-              <h3 className="text-slate-900">Generate Daily Facebook Post (Gemini AI)</h3>
+              <h3 className="text-slate-900">Generate Facebook Post Draft</h3>
             </div>
             <p className="text-xs text-slate-500">
-              The AI will craft an engaging post caption with emojis, value propositions, call-to-actions, and relevant hashtags.
+              Generate a caption and save it as a draft for review. It will never publish immediately.
             </p>
 
             <form onSubmit={handleGeneratePost} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1" htmlFor="post-page">
+                  Facebook Page
+                </label>
+                <select
+                  id="post-page"
+                  required
+                  value={selectedPageId}
+                  onChange={(e) => setSelectedPageId(e.target.value)}
+                  disabled={loadingPages || pages.length === 0}
+                  className="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loadingPages ? (
+                    <option value="">Loading Pages...</option>
+                  ) : pages.length === 0 ? (
+                    <option value="">No connected Pages available</option>
+                  ) : (
+                    pages.map((page) => (
+                      <option key={page.id} value={page.id}>
+                        {page.name} ({page.meta_page_id})
+                      </option>
+                    ))
+                  )}
+                </select>
+                {!loadingPages && pages.length === 0 && (
+                  <p className="mt-1 text-amber-700">
+                    Connect a Facebook Page before generating a post draft.
+                  </p>
+                )}
+              </div>
+
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Topic or Product Focus</label>
                 <input
@@ -359,21 +489,8 @@ export default function PostMonitor() {
                 </div>
               </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={autoPublishDirect}
-                    onChange={(e) => setAutoPublishDirect(e.target.checked)}
-                    className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <div>
-                    <span className="font-semibold text-slate-800 block text-xs">Publish Immediately to Facebook</span>
-                    <span className="text-[11px] text-slate-500">
-                      If unchecked, saves as a Draft so you can review before posting.
-                    </span>
-                  </div>
-                </label>
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800">
+                Generated content is saved to drafts. Review it and edit any claims before publishing.
               </div>
 
               <div className="flex justify-end space-x-2 pt-2">
@@ -386,7 +503,7 @@ export default function PostMonitor() {
                 </button>
                 <button
                   type="submit"
-                  disabled={generating}
+                  disabled={generating || loadingPages || pages.length === 0 || !selectedPageId}
                   className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold flex items-center gap-1.5"
                 >
                   <Sparkles className="w-3.5 h-3.5" />

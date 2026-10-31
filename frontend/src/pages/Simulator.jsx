@@ -149,7 +149,11 @@ export default function Simulator({ onCommentSimulated, onNavigate }) {
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Language Detected</span>
               <span className="font-bold text-slate-900 text-sm capitalize">
-                {simResult.detected_language === 'ne' ? 'नेपाली (Nepali)' : 'English'}
+                {simResult.detected_language === 'ne'
+                  ? 'नेपाली (Nepali)'
+                  : simResult.detected_language === 'romanized_ne'
+                    ? 'Romanized Nepali'
+                    : 'English'}
               </span>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -166,10 +170,15 @@ export default function Simulator({ onCommentSimulated, onNavigate }) {
 
           {/* AI Response Output */}
           <div className="space-y-2">
-            <span className="text-xs font-bold text-slate-700">AI Generated Response:</span>
+            <span className="text-xs font-bold text-slate-700">Suggested Reply:</span>
             <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-xl text-slate-900 text-sm leading-relaxed font-medium">
-              {simResult.ai_draft_reply}
+              {simResult.ai_draft_reply || 'No draft generated. Check AI configuration or review the comment manually.'}
             </div>
+            {simResult.ai_generation_source === 'local_fallback' && (
+              <p className="text-xs font-semibold text-amber-700">
+                Local template fallback — verify before publishing.
+              </p>
+            )}
           </div>
 
           {/* Navigation to Queue */}

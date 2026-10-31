@@ -3,73 +3,93 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import engine, Base, AsyncSessionLocal
-from app.core.security import get_password_hash, encrypt_token
+from app.core.security import get_password_hash, encrypt_token, verify_password
+from app.config import settings
 from app.models.entities import (
     User, UserRole, FacebookPage, Post, Comment, CommentStatus,
-    RestrictedKeyword, AutomationRule, ActionLog, ActionStatus
+    RestrictedKeyword, AutomationRule, ActionLog, ActionStatus,
+    ContentGenerationConfig,
 )
 
 async def init_models():
-    """Create all tables and auto-migrate newly added columns if using SQLite."""
+    """Create tables and add missing columns without suppressing migration errors."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        
-        # Safe migration for new columns on existing SQLite database
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE facebook_pages ADD COLUMN daily_posts_target INTEGER DEFAULT 1"))
-        except Exception:
-            pass
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE facebook_pages ADD COLUMN post_auto_publish BOOLEAN DEFAULT 0"))
-        except Exception:
-            pass
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE facebook_pages ADD COLUMN posting_schedule_times VARCHAR(255) DEFAULT '10:00,18:00'"))
-        except Exception:
-            pass
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE facebook_pages ADD COLUMN post_topics_prompt TEXT DEFAULT 'Product highlights and deals'"))
-        except Exception:
-            pass
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE facebook_pages ADD COLUMN posts_created_today INTEGER DEFAULT 0"))
-        except Exception:
-            pass
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE posts ADD COLUMN is_ai_generated BOOLEAN DEFAULT 0"))
-        except Exception:
-            pass
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE posts ADD COLUMN status VARCHAR(50) DEFAULT 'published'"))
-        except Exception:
-            pass
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE posts ADD COLUMN scheduled_for DATETIME"))
-        except Exception:
-            pass
+        from sqlalchemy import inspect, text
+
+        migrations = {
+            "facebook_pages": {
+                "daily_posts_target": "INTEGER DEFAULT 1",
+                "post_auto_publish": "BOOLEAN DEFAULT FALSE",
+                "posting_schedule_times": "VARCHAR(255) DEFAULT '10:00,18:00'",
+                "post_topics_prompt": "TEXT DEFAULT 'Product highlights and deals'",
+                "posts_created_today": "INTEGER DEFAULT 0",
+                "posts_counter_reset_on": "DATE",
+                "token_status": "VARCHAR(30) NOT NULL DEFAULT 'not_configured'",
+                "token_expires_at": "TIMESTAMP",
+                "meta_app_id": "VARCHAR(100)",
+                "last_validated_at": "TIMESTAMP",
+                "granted_permissions": "JSON",
+                "page_tasks": "JSON",
+                "timezone": "VARCHAR(64) NOT NULL DEFAULT 'Asia/Kathmandu'",
+            },
+            "posts": {
+                "is_ai_generated": "BOOLEAN DEFAULT FALSE",
+                "generation_source": "VARCHAR(30)",
+                "status": "VARCHAR(50) DEFAULT 'published'",
+                "scheduled_for": "TIMESTAMP",
+                "topic": "TEXT",
+                "content_category": "VARCHAR(80)",
+                "content_language": "VARCHAR(30)",
+                "approved_at": "TIMESTAMP",
+                "approved_by_user_id": "INTEGER REFERENCES users(id)",
+                "rejection_reason": "TEXT",
+            },
+            "comments": {
+                "ai_generation_source": "VARCHAR(30)",
+                "is_simulated": "BOOLEAN NOT NULL DEFAULT FALSE",
+            },
+        }
+
+        for table_name, columns in migrations.items():
+            existing_columns = await conn.run_sync(
+                lambda sync_conn, name=table_name: {
+                    column["name"] for column in inspect(sync_conn).get_columns(name)
+                }
+            )
+            for column_name, column_definition in columns.items():
+                if column_name not in existing_columns:
+                    await conn.execute(
+                        text(
+                            f"ALTER TABLE {table_name} ADD COLUMN "
+                            f"{column_name} {column_definition}"
+                        )
+                    )
 
 async def seed_data():
-    """Seed initial administrator, restricted keywords, demo page, and sample bilingual comments."""
+    """Seed configured administrator, restricted keywords, and demo records."""
     async with AsyncSessionLocal() as db:
-        # 1. Admin user
-        res_user = await db.execute(select(User).where(User.email == "admin@pyloom.com"))
-        admin_user = res_user.scalar_one_or_none()
-        if not admin_user:
-            admin_user = User(
-                email="admin@pyloom.com",
-                hashed_password=get_password_hash("admin123"),
-                full_name="PyLoom Administrator",
-                role=UserRole.ADMIN
+        legacy_admin_result = await db.execute(
+            select(User).where(User.email == "admin@pyloom.com")
+        )
+        legacy_admin = legacy_admin_result.scalar_one_or_none()
+        if legacy_admin and verify_password("admin123", legacy_admin.hashed_password):
+            legacy_admin.is_active = False
+
+        # Provision an initial administrator only when an operator configured one.
+        if settings.INITIAL_ADMIN_EMAIL:
+            res_user = await db.execute(
+                select(User).where(User.email == settings.INITIAL_ADMIN_EMAIL)
             )
-            db.add(admin_user)
+            if not res_user.scalar_one_or_none():
+                db.add(
+                    User(
+                        email=settings.INITIAL_ADMIN_EMAIL,
+                        hashed_password=get_password_hash(settings.INITIAL_ADMIN_PASSWORD),
+                        full_name="PyLoom Administrator",
+                        role=UserRole.SUPER_ADMIN,
+                    )
+                )
 
         # 2. Restricted Keywords
         default_keywords = [
@@ -87,6 +107,22 @@ async def seed_data():
             if not res_kw.scalar_one_or_none():
                 db.add(RestrictedKeyword(keyword=kw, category=cat, action=act))
 
+        async def ensure_content_generation_configs() -> None:
+            pages_result = await db.execute(select(FacebookPage))
+            for existing_page in pages_result.scalars().all():
+                config_result = await db.execute(
+                    select(ContentGenerationConfig).where(
+                        ContentGenerationConfig.page_id == existing_page.id
+                    )
+                )
+                if not config_result.scalar_one_or_none():
+                    db.add(ContentGenerationConfig(page_id=existing_page.id))
+
+        if settings.ENVIRONMENT.lower() == "production":
+            await ensure_content_generation_configs()
+            await db.commit()
+            return
+
         # 3. Demo Facebook Page
         res_page = await db.execute(select(FacebookPage).where(FacebookPage.meta_page_id == "pyloom_page_001"))
         page = res_page.scalar_one_or_none()
@@ -97,6 +133,7 @@ async def seed_data():
                 category="E-Commerce & Digital Marketing",
                 picture_url="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=128&q=80",
                 access_token_enc=encrypt_token("mock_page_token_pyloom_2026"),
+                token_status="simulated",
                 is_connected=True,
                 automation_enabled=True,
                 auto_approve_enabled=False,  # Defaults to Approval Queue for human safety
@@ -202,4 +239,5 @@ async def seed_data():
             )
             db.add(log1)
 
+        await ensure_content_generation_configs()
         await db.commit()

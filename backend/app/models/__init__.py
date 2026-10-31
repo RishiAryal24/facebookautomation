@@ -1,9 +1,11 @@
 from app.models.entities import (
-    User, UserRole, FacebookPage, Post, Comment, CommentStatus,
-    RestrictedKeyword, AutomationRule, ActionLog, ActionStatus
+    User, UserRole, UserSession, FacebookPage, Post, Comment, CommentStatus,
+    RestrictedKeyword, AutomationRule, ActionLog, ActionStatus, ScheduledPostRun,
+    ContentGenerationConfig, ContentGenerationRun, PostContentVersion,
 )
 
 __all__ = [
-    "User", "UserRole", "FacebookPage", "Post", "Comment", "CommentStatus",
-    "RestrictedKeyword", "AutomationRule", "ActionLog", "ActionStatus"
+    "User", "UserRole", "UserSession", "FacebookPage", "Post", "Comment", "CommentStatus",
+    "RestrictedKeyword", "AutomationRule", "ActionLog", "ActionStatus", "ScheduledPostRun",
+    "ContentGenerationConfig", "ContentGenerationRun", "PostContentVersion",
 ]

@@ -4,13 +4,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
-from app.models.entities import RestrictedKeyword, AutomationRule
+from app.models.entities import RestrictedKeyword, AutomationRule, UserRole
 from app.schemas.schemas import (
     RestrictedKeywordCreate, RestrictedKeywordRead,
     AutomationRuleCreate, AutomationRuleRead
 )
+from app.api.v1.auth import get_current_user, require_roles
 
-router = APIRouter(prefix="/rules", tags=["Automation Rules & Keywords"])
+router = APIRouter(
+    prefix="/rules",
+    tags=["Automation Rules & Keywords"],
+    dependencies=[Depends(get_current_user)],
+)
+ADMIN_ROLES = (UserRole.SUPER_ADMIN, UserRole.COMPANY_ADMIN, UserRole.ADMIN)
 
 # Restricted Keywords
 @router.get("/keywords", response_model=List[RestrictedKeywordRead])
@@ -18,7 +24,11 @@ async def list_keywords(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(RestrictedKeyword).order_by(RestrictedKeyword.created_at.desc()))
     return result.scalars().all()
 
-@router.post("/keywords", response_model=RestrictedKeywordRead)
+@router.post(
+    "/keywords",
+    response_model=RestrictedKeywordRead,
+    dependencies=[Depends(require_roles(*ADMIN_ROLES))],
+)
 async def add_keyword(kw_in: RestrictedKeywordCreate, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(RestrictedKeyword).where(RestrictedKeyword.keyword == kw_in.keyword))
     if res.scalar_one_or_none():
@@ -34,7 +44,10 @@ async def add_keyword(kw_in: RestrictedKeywordCreate, db: AsyncSession = Depends
     await db.refresh(kw)
     return kw
 
-@router.delete("/keywords/{keyword_id}")
+@router.delete(
+    "/keywords/{keyword_id}",
+    dependencies=[Depends(require_roles(*ADMIN_ROLES))],
+)
 async def delete_keyword(keyword_id: int, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(RestrictedKeyword).where(RestrictedKeyword.id == keyword_id))
     kw = res.scalar_one_or_none()
@@ -50,7 +63,11 @@ async def list_rules(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(AutomationRule).order_by(AutomationRule.created_at.desc()))
     return result.scalars().all()
 
-@router.post("/", response_model=AutomationRuleRead)
+@router.post(
+    "/",
+    response_model=AutomationRuleRead,
+    dependencies=[Depends(require_roles(*ADMIN_ROLES))],
+)
 async def create_rule(rule_in: AutomationRuleCreate, db: AsyncSession = Depends(get_db)):
     rule = AutomationRule(
         page_id=rule_in.page_id,
@@ -66,7 +83,10 @@ async def create_rule(rule_in: AutomationRuleCreate, db: AsyncSession = Depends(
     await db.refresh(rule)
     return rule
 
-@router.delete("/{rule_id}")
+@router.delete(
+    "/{rule_id}",
+    dependencies=[Depends(require_roles(*ADMIN_ROLES))],
+)
 async def delete_rule(rule_id: int, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(AutomationRule).where(AutomationRule.id == rule_id))
     rule = res.scalar_one_or_none()
