@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 import re
 from difflib import SequenceMatcher
 from typing import Any, Callable, Dict, List, Optional
@@ -6,6 +8,10 @@ from typing import Any, Callable, Dict, List, Optional
 from google.genai.errors import APIError
 
 from app.config import settings
+from app.services.brand_knowledge import build_brand_profile, find_relevant_product
+
+
+logger = logging.getLogger(__name__)
 
 
 BILINGUAL_SYSTEM_PROMPT = """
@@ -31,10 +37,16 @@ Return JSON with:
 """
 
 SOCIAL_POST_SYSTEM_PROMPT = """
-Write accurate, non-deceptive Facebook Page post drafts. Do not invent product
-claims, prices, discounts, availability, delivery promises, or customer results
-that are absent from the provided context. Do not describe the draft as already
-published. Keep the requested language and tone.
+You are an experienced business editor writing Facebook Page drafts. Write with
+specificity, natural rhythm, and the judgment of a knowledgeable marketing
+professional; do not claim that a person wrote the content. Use only verified
+facts supplied in the request. Never invent product features, prices, discounts,
+availability, integrations, customer stories, results, achievements, or metrics.
+Do not use generic promotional slogans, excessive emojis, or hashtags as filler.
+Avoid phrases such as "Unlock your potential", "Revolutionize your business",
+"In today's digital world", "Take your business to the next level", and
+"Game-changing solutions".
+Keep the requested language and length. Return the requested JSON only.
 """
 
 
@@ -46,11 +58,83 @@ class GeminiService:
     def __init__(self):
         self.api_key = settings.GEMINI_API_KEY
         self.model_name = settings.GEMINI_MODEL
+        self.fallback_model_name = settings.GEMINI_FALLBACK_MODEL
         self._client = None
         if self.api_key:
             from google import genai
 
             self._client = genai.Client(api_key=self.api_key)
+
+    def _log_api_error(
+        self,
+        operation: str,
+        error: APIError,
+        model_name: Optional[str] = None,
+    ) -> None:
+        message = str(getattr(error, "message", "") or error)
+        if self.api_key:
+            message = message.replace(self.api_key, "[redacted]")
+        logger.warning(
+            "Gemini %s failed: model=%s code=%s status=%s message=%s",
+            operation,
+            model_name or self.model_name,
+            getattr(error, "code", None),
+            getattr(error, "status", None),
+            message[:500],
+        )
+
+    @staticmethod
+    def _is_transient_api_error(error: APIError) -> bool:
+        return error.code == 429 or (
+            isinstance(error.code, int) and 500 <= error.code < 600
+        )
+
+    async def _generate_content_with_fallback(
+        self,
+        *,
+        operation: str,
+        contents: str,
+        system_instruction: str,
+    ) -> Any:
+        models = [self.model_name]
+        if self.fallback_model_name and self.fallback_model_name not in models:
+            models.append(self.fallback_model_name)
+
+        for index, model_name in enumerate(models):
+            model_attempts = 2 if index > 0 else 1
+            for attempt in range(model_attempts):
+                try:
+                    return await self._client.aio.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config={
+                            "system_instruction": system_instruction,
+                            "response_mime_type": "application/json",
+                        },
+                    )
+                except APIError as exc:
+                    self._log_api_error(operation, exc, model_name)
+                    if not self._is_transient_api_error(exc):
+                        raise GeminiServiceError("Gemini request failed") from exc
+                    if attempt + 1 < model_attempts:
+                        logger.info(
+                            "Gemini %s retrying fallback model=%s after transient provider error",
+                            operation,
+                            model_name,
+                        )
+                        await asyncio.sleep(1)
+                        continue
+                    if index + 1 < len(models):
+                        logger.info(
+                            "Gemini %s switching to fallback model=%s after transient provider error",
+                            operation,
+                            models[index + 1],
+                        )
+
+        raise GeminiServiceError(
+            "Gemini is temporarily unavailable across the configured models. "
+            "Please try again shortly."
+        )
 
     def _is_devanagari(self, text: str) -> bool:
         return bool(re.search(r"[\u0900-\u097f]", text))
@@ -169,16 +253,13 @@ Incoming comment:
 {comment_text}
 """
         try:
-            response = await self._client.aio.models.generate_content(
-                model=self.model_name,
+            response = await self._generate_content_with_fallback(
+                operation="comment generation",
                 contents=prompt,
-                config={
-                    "system_instruction": BILINGUAL_SYSTEM_PROMPT,
-                    "response_mime_type": "application/json",
-                },
+                system_instruction=BILINGUAL_SYSTEM_PROMPT,
             )
-        except APIError:
-            return self._fallback_or_raise(fallback, "Gemini request failed")
+        except GeminiServiceError as exc:
+            return self._fallback_or_raise(fallback, str(exc))
 
         try:
             result = self._validate_comment_result(json.loads(response.text or ""))
@@ -186,97 +267,182 @@ Incoming comment:
             return self._fallback_or_raise(fallback, "Gemini returned invalid reply data")
         return result
 
-    def _generate_fallback_post(
-        self,
-        topic: Optional[str],
-        language: str,
-    ) -> Dict[str, Any]:
-        if language == "ne":
-            message = (
-                f"✨ {topic or 'हाम्रो नयाँ जानकारी'} ✨\n\n"
-                "थप जानकारीका लागि हामीलाई सिधै मेसेज गर्नुहोस्।\n"
-                "#PyLoom #Nepal"
-            )
-        elif language == "bilingual":
-            message = (
-                f"✨ {topic or 'A new update / नयाँ जानकारी'} ✨\n\n"
-                "थप जानकारीका लागि हामीलाई सिधै मेसेज गर्नुहोस्।\n"
-                "Message us directly for more information.\n"
-                "#PyLoom #Nepal"
-            )
-        else:
-            message = (
-                f"✨ {topic or 'A new update'} ✨\n\n"
-                "Message us directly for more information.\n"
-                "#PyLoom"
-            )
+    @staticmethod
+    def _word_count(text: str) -> int:
+        return len(re.findall(r"[\w]+(?:['’-][\w]+)*", text, re.UNICODE))
+
+    @staticmethod
+    def _length_range(content_length: str) -> tuple[int, int]:
         return {
-            "message": message,
-            "media_url": None,
-            "source": "local_fallback",
-        }
+            "short": (60, 100),
+            "standard": (120, 200),
+            "detailed": (200, 300),
+            "storytelling": (180, 350),
+        }[content_length]
 
     async def generate_social_post(
         self,
         brand_context: str = "",
         topic: Optional[str] = None,
-        language: str = "ne",
+        language: str = "en",
         tone: str = "promotional",
         category: Optional[str] = None,
         recent_posts: Optional[List[str]] = None,
+        content_length: str = "standard",
+        brand_profile: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        fallback = lambda: self._generate_fallback_post(topic, language)
+        if content_length not in {"short", "standard", "detailed", "storytelling"}:
+            raise GeminiServiceError("Unsupported requested caption length")
         if not self._client:
-            return self._fallback_or_raise(
-                fallback,
-                "Gemini API key is not configured",
+            raise GeminiServiceError("Gemini API key is not configured")
+
+        selected_topic = (topic or "Useful guidance for local businesses").strip()
+        profile = build_brand_profile(brand_profile)
+        relevant_product = find_relevant_product(selected_topic, profile)
+        missing_facts: List[str] = []
+        if relevant_product:
+            product_name = relevant_product.get("name", "the selected product")
+            if not relevant_product.get("description"):
+                missing_facts.append(f"Verified description for {product_name}")
+            if not relevant_product.get("approved_features"):
+                missing_facts.append(f"Approved features for {product_name}")
+
+        word_minimum, word_maximum = self._length_range(content_length)
+        language_name = {
+            "ne": "natural Nepali",
+            "en": "natural English",
+            "bilingual": "natural Nepali and English",
+        }.get(language, "natural English")
+        topic_guidance = ""
+        normalized_topic = selected_topic.casefold()
+        if any(term in normalized_topic for term in ("hospital", "hms", "clinic")):
+            topic_guidance = (
+                "Ground the post in real hospital operations such as patient registration, "
+                "appointments, admissions, billing, records, or coordination. Do not claim "
+                "the product supports a workflow unless its verified product record says so."
+            )
+        elif any(term in normalized_topic for term in ("analytics", "insight", "data")):
+            topic_guidance = (
+                "Focus on useful reporting questions: KPI definitions, data accuracy, "
+                "dashboards, reporting cadence, and how teams make decisions from evidence. "
+                "Do not claim a feature unless verified."
+            )
+        elif any(term in normalized_topic for term in ("e-commerce", "ecommerce", "online store")):
+            topic_guidance = (
+                "Discuss practical online-store work such as order handling, inventory "
+                "visibility, customer experience, and day-to-day operations. Do not assert "
+                "that a named product provides a capability unless verified."
             )
 
         prompt = f"""
-Brand context: {brand_context or "Not provided"}
-Topic: {topic or "Product information and customer support"}
-Language: {"Nepali" if language == "ne" else "English" if language == "en" else "Bilingual Nepali and English"}
-Tone: {tone}
-Content category: {category or "Choose the most relevant category"}
-Recently generated captions (do not repeat or closely paraphrase):
-{chr(10).join(f"- {item[:500]}" for item in (recent_posts or [])[:10]) or "None"}
-Write a natural, professional caption with relevant hashtags and a clear,
-truthful call to action. Do not invent achievements, testimonials, prices,
-discounts, offers, availability, or customer results. Return only the post text.
-"""
-        try:
-            response = await self._client.aio.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config={"system_instruction": SOCIAL_POST_SYSTEM_PROMPT},
-            )
-        except APIError:
-            return self._fallback_or_raise(fallback, "Gemini request failed")
+Brand knowledge profile (the only source of brand/product facts):
+{json.dumps(profile, ensure_ascii=False, sort_keys=True)}
+Additional administrator context:
+{brand_context or "None"}
+Topic: {selected_topic}
+Relevant verified product record:
+{json.dumps(relevant_product, ensure_ascii=False) if relevant_product else "No matching product record"}
+For a named product, use only its description and approved_features in that
+record for capability claims. Treat additional administrator context as tone
+and background unless the same claim is explicitly verified in the product record.
+Language: {language_name}
+Brand tone: {tone}
+Category: {category or "Choose the best fit"}
+Caption length: {content_length}, exactly {word_minimum}-{word_maximum} words.
+Topic-specific direction: {topic_guidance or "Use a concrete, relevant business situation and explain it accurately."}
+Past published/generated captions (avoid repeated hooks, structure, and wording):
+{chr(10).join(f"- {item[:700]}" for item in (recent_posts or [])[:10]) or "None"}
 
-        message = (response.text or "").strip()
-        if not message:
-            return self._fallback_or_raise(fallback, "Gemini returned an empty post")
-        if len(message) > 63206:
-            raise GeminiServiceError("Gemini returned a caption that exceeds Facebook's text limit")
-        if not re.search(r"#\w+", message, re.UNICODE):
-            raise GeminiServiceError("Gemini caption did not include relevant hashtags")
-        normalized_message = re.sub(r"\s+", " ", message).casefold()
-        if any(
-            SequenceMatcher(
-                None,
-                normalized_message,
-                re.sub(r"\s+", " ", recent).casefold(),
-            ).ratio() >= 0.9
-            for recent in (recent_posts or [])
-        ):
-            raise GeminiServiceError(
-                "Gemini returned a caption too similar to recently generated content"
+Choose the most suitable structure from problem/explanation/solution, story/insight/
+takeaway, educational explanation/example, feature/benefit/application, or question/
+discussion/recommendation. Vary the hook and ending. Explain the customer's actual
+problem and a practical response without implying unverified PyLoom product features.
+Use realistic hypothetical situations only when clearly framed as examples, never as
+real customer stories. Include a natural call to action only when it fits. Use at most
+three relevant hashtags and no more than one emoji. Do not add a generic slogan.
+
+Return JSON with:
+- caption: complete post text in the requested language
+- image_brief: concise visual concept tied to the topic, with no text or logo in image
+- missing_facts: list of factual details an administrator should verify before publishing
+- structure: short name of the selected structure
+"""
+        request_prompt = prompt
+        last_error = "Gemini returned invalid post data"
+        for attempt in range(2):
+            response = await self._generate_content_with_fallback(
+                operation="social post generation",
+                contents=request_prompt,
+                system_instruction=SOCIAL_POST_SYSTEM_PROMPT,
             )
-        return {
-            "message": message,
-            "media_url": None,
-            "source": "gemini_api",
-        }
+
+            try:
+                result = json.loads(response.text or "")
+            except (json.JSONDecodeError, TypeError) as exc:
+                last_error = "Gemini returned invalid post data"
+                if attempt == 1:
+                    raise GeminiServiceError(last_error) from exc
+                request_prompt = prompt + "\nThe previous response was not valid JSON. Return the required JSON object."
+                continue
+
+            if not isinstance(result, dict):
+                last_error = "Gemini returned invalid post data"
+                if attempt == 1:
+                    raise GeminiServiceError(last_error)
+                request_prompt = prompt + "\nThe previous response was not a JSON object. Return the required JSON object."
+                continue
+
+            message = result.get("caption")
+            image_brief = result.get("image_brief")
+            if not isinstance(message, str) or not message.strip():
+                last_error = "Gemini returned an empty caption"
+            elif len(message) > 63206:
+                last_error = "Gemini returned a caption that exceeds Facebook's text limit"
+            elif not isinstance(image_brief, str) or not image_brief.strip():
+                last_error = "Gemini did not return a usable visual concept"
+            else:
+                count = self._word_count(message)
+                if not word_minimum <= count <= word_maximum:
+                    last_error = (
+                        f"Gemini caption contains {count} words; "
+                        f"{content_length} requires {word_minimum}-{word_maximum}"
+                    )
+                else:
+                    normalized_message = re.sub(r"\s+", " ", message).casefold()
+                    if any(
+                        SequenceMatcher(
+                            None,
+                            normalized_message,
+                            re.sub(r"\s+", " ", recent).casefold(),
+                        ).ratio() >= 0.9
+                        for recent in (recent_posts or [])
+                    ):
+                        last_error = "Gemini returned a caption too similar to recent content"
+                    else:
+                        returned_missing_facts = result.get("missing_facts", [])
+                        if isinstance(returned_missing_facts, list):
+                            missing_facts.extend(
+                                fact.strip()
+                                for fact in returned_missing_facts
+                                if isinstance(fact, str) and fact.strip()
+                            )
+                        return {
+                            "message": message.strip(),
+                            "image_brief": image_brief.strip(),
+                            "missing_facts": list(dict.fromkeys(missing_facts)),
+                            "structure": str(result.get("structure") or "educational"),
+                            "media_url": None,
+                            "source": "gemini_api",
+                        }
+            if attempt == 1:
+                raise GeminiServiceError(last_error)
+            request_prompt = (
+                prompt
+                + f"\nRevise the prior result. Correction required: {last_error}. "
+                f"Return a {content_length} caption within {word_minimum}-{word_maximum} words "
+                "and all required JSON fields."
+            )
+        raise GeminiServiceError(last_error)
 
 
 gemini_service = GeminiService()

@@ -80,6 +80,8 @@ class FacebookPage(Base):
     last_validated_at = Column(DateTime, nullable=True)
     granted_permissions = Column(JSON, nullable=True)
     page_tasks = Column(JSON, nullable=True)
+    instagram_business_account_id = Column(String(100), nullable=True)
+    instagram_username = Column(String(255), nullable=True)
     is_connected = Column(Boolean, default=True)
     timezone = Column(String(64), default="Asia/Kathmandu", nullable=False)
     
@@ -148,6 +150,18 @@ class Post(Base):
     topic = Column(Text, nullable=True)
     content_category = Column(String(80), nullable=True)
     content_language = Column(String(30), nullable=True)
+    content_length = Column(String(20), default="standard", nullable=False)
+    missing_facts = Column(JSON, default=list, nullable=False)
+    media_status = Column(String(20), default="not_requested", nullable=False)
+    media_brief = Column(Text, nullable=True)
+    media_warning = Column(Text, nullable=True)
+    media_generation_prompt = Column(Text, nullable=True)
+    media_generation_attempts = Column(Integer, default=0, nullable=False)
+    media_generation_started_at = Column(DateTime, nullable=True)
+    facebook_status = Column(String(30), default="not_requested", nullable=False)
+    instagram_status = Column(String(30), default="not_requested", nullable=False)
+    instagram_media_id = Column(String(150), nullable=True)
+    instagram_permalink_url = Column(Text, nullable=True)
     approved_at = Column(DateTime, nullable=True)
     approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     rejection_reason = Column(Text, nullable=True)
@@ -201,6 +215,8 @@ class ContentGenerationConfig(Base):
         ),
         nullable=False,
     )
+    brand_profile = Column(JSON, default=dict, nullable=False)
+    default_content_length = Column(String(20), default="standard", nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     page = relationship("FacebookPage", back_populates="content_generation_config")
@@ -257,6 +273,7 @@ class Comment(Base):
     
     sender_id = Column(String(100), nullable=True)
     sender_name = Column(String(255), default="Facebook User")
+    platform = Column(String(20), default="facebook", nullable=False)
     message = Column(Text, nullable=False)
     
     # AI Analysis & Draft

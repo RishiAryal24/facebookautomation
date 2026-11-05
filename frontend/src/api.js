@@ -39,6 +39,28 @@ export const setAccessToken = (token) => {
   accessToken = token;
 };
 
+export const refreshAccessToken = () => {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post(`${API_BASE_URL}/auth/refresh`, null, {
+        withCredentials: true,
+        timeout: 5000,
+      })
+      .then((response) => {
+        const token = response.data.access_token;
+        if (typeof token !== 'string' || !token) {
+          throw new Error('The server returned an invalid sign-in session.');
+        }
+        setAccessToken(token);
+        return token;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+};
+
 api.interceptors.request.use((config) => {
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
@@ -54,18 +76,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && request && !request._authRetry && !isAuthRequest) {
       request._authRetry = true;
       try {
-        if (!refreshPromise) {
-          refreshPromise = axios
-            .post(`${API_BASE_URL}/auth/refresh`, null, { withCredentials: true })
-            .then((response) => {
-              setAccessToken(response.data.access_token);
-              return response.data.access_token;
-            })
-            .finally(() => {
-              refreshPromise = null;
-            });
-        }
-        const renewedToken = await refreshPromise;
+        const renewedToken = await refreshAccessToken();
         request.headers.Authorization = `Bearer ${renewedToken}`;
         return api(request);
       } catch {

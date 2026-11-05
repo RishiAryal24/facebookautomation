@@ -1,17 +1,20 @@
+import asyncio
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from cryptography.fernet import InvalidToken
 
 from app.config import settings
 from app.core.security import decrypt_token
+from app.services.media_generation import MediaGenerationError, media_generation_service
 
 logger = logging.getLogger(__name__)
 
@@ -265,11 +268,18 @@ class MetaGraphClient:
         *,
         params: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
+        files: Optional[Dict[str, Any]] = None,
         timeout: float = 15.0,
     ) -> Dict[str, Any]:
         try:
+            request_options: Dict[str, Any] = {
+                "params": params,
+                "data": data,
+            }
+            if files is not None:
+                request_options["files"] = files
             async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.request(method, url, params=params, data=data)
+                response = await client.request(method, url, **request_options)
         except httpx.TimeoutException as exc:
             logger.warning(
                 "Meta Graph API request timed out",
@@ -550,6 +560,218 @@ class MetaGraphClient:
         )
         return await self._request_json("GET", f"{self.base_url}/{page_id}", params=params)
 
+    async def get_linked_instagram_account(
+        self,
+        page_id: str,
+        access_token: str,
+    ) -> Optional[Dict[str, Any]]:
+        payload = await self._request_json(
+            "GET",
+            f"{self.base_url}/{page_id}",
+            params=self._authenticated_params(
+                {"fields": "instagram_business_account{id,username}"},
+                access_token,
+            ),
+        )
+        account = payload.get("instagram_business_account")
+        if not isinstance(account, dict) or not account.get("id"):
+            return None
+        return account
+
+    @staticmethod
+    def public_media_url(media_url: str) -> str:
+        media_url = media_generation_service.instagram_compatible_media_url(media_url)
+        local_asset = media_generation_service.resolve_local_asset(media_url)
+        if local_asset:
+            base_url = settings.MEDIA_PUBLIC_BASE_URL.strip()
+            parsed_base = urlsplit(base_url)
+            if not base_url or parsed_base.scheme != "https" or not parsed_base.hostname:
+                raise MetaAPIError(
+                    "Instagram publishing requires MEDIA_PUBLIC_BASE_URL to be a public HTTPS URL"
+                )
+            path = media_url.split("?", 1)[0].lstrip("/")
+            public_url = urljoin(base_url.rstrip("/") + "/", path)
+        else:
+            public_url = media_url
+
+        parsed = urlsplit(public_url)
+        hostname = (parsed.hostname or "").lower()
+        if (
+            parsed.scheme != "https"
+            or not hostname
+            or parsed.username
+            or parsed.password
+            or hostname in {"localhost", "localhost.localdomain"}
+            or hostname.endswith((".localhost", ".local", ".internal"))
+        ):
+            raise MetaAPIError("Instagram image URLs must be publicly reachable HTTPS URLs")
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError:
+            address = None
+        if address and (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_reserved
+            or address.is_unspecified
+        ):
+            raise MetaAPIError("Instagram image URLs must use a public host")
+        return public_url
+
+    async def publish_instagram_image(
+        self,
+        instagram_account_id: str,
+        message: str,
+        media_url: str,
+        access_token: str,
+    ) -> Dict[str, Any]:
+        if settings.SIMULATION_MODE:
+            raise MetaAPIError(
+                "Live Instagram publishing is disabled while SIMULATION_MODE is enabled"
+            )
+        try:
+            image_url = self.public_media_url(media_url)
+        except MediaGenerationError as exc:
+            raise MetaAPIError(str(exc)) from exc
+        container = await self._request_json(
+            "POST",
+            f"{self.base_url}/{instagram_account_id}/media",
+            data=self._authenticated_params(
+                {"image_url": image_url, "caption": message},
+                access_token,
+            ),
+        )
+        container_id = container.get("id")
+        if not isinstance(container_id, str) or not container_id:
+            raise MetaAPIError(
+                "Instagram accepted the media request but returned no container ID",
+                publication_uncertain=True,
+            )
+
+        for attempt in range(15):
+            status_payload = await self._request_json(
+                "GET",
+                f"{self.base_url}/{container_id}",
+                params=self._authenticated_params(
+                    {"fields": "id,status_code"},
+                    access_token,
+                ),
+            )
+            status_code = status_payload.get("status_code")
+            if status_code == "FINISHED":
+                break
+            if status_code == "ERROR":
+                raise MetaAPIError("Instagram could not process the uploaded image")
+            if attempt < 14:
+                await asyncio.sleep(2)
+        else:
+            raise MetaAPIError(
+                "Instagram media processing did not finish in time; try again later",
+            )
+
+        try:
+            published = await self._request_json(
+                "POST",
+                f"{self.base_url}/{instagram_account_id}/media_publish",
+                data=self._authenticated_params(
+                    {"creation_id": container_id},
+                    access_token,
+                ),
+            )
+        except MetaAPIError as exc:
+            uncertain = exc.http_status is None or exc.http_status >= 500
+            raise MetaAPIError(
+                "Instagram publish outcome is uncertain; check the account before retrying",
+                http_status=exc.http_status,
+                meta_error=exc.meta_error,
+                publication_uncertain=uncertain,
+            ) from exc
+        media_id = published.get("id")
+        if not isinstance(media_id, str) or not media_id:
+            raise MetaAPIError(
+                "Instagram accepted the publish request but returned no media ID",
+                publication_uncertain=True,
+            )
+        try:
+            verified = await self._request_json(
+                "GET",
+                f"{self.base_url}/{media_id}",
+                params=self._authenticated_params(
+                    {"fields": "id,permalink"},
+                    access_token,
+                ),
+            )
+        except MetaAPIError as exc:
+            raise MetaAPIError(
+                f"Instagram returned media ID {media_id}, but publication could not be verified",
+                http_status=exc.http_status,
+                meta_error=exc.meta_error,
+                published_post_id=media_id,
+                publication_uncertain=True,
+            ) from exc
+        if (
+            verified.get("id") != media_id
+            or not isinstance(verified.get("permalink"), str)
+            or not verified.get("permalink")
+        ):
+            raise MetaAPIError(
+                f"Instagram returned media ID {media_id}, but did not confirm a permalink",
+                published_post_id=media_id,
+                publication_uncertain=True,
+            )
+        return {"id": media_id, "permalink_url": verified["permalink"], "verified": True}
+
+    async def fetch_instagram_comments(
+        self,
+        media_id: str,
+        access_token: str,
+        limit: int = 25,
+    ) -> List[Dict[str, Any]]:
+        if settings.SIMULATION_MODE:
+            return []
+        payload = await self._request_json(
+            "GET",
+            f"{self.base_url}/{media_id}/comments",
+            params=self._authenticated_params(
+                {"fields": "id,text,username,timestamp,from", "limit": limit},
+                access_token,
+            ),
+        )
+        return payload.get("data", [])
+
+    async def fetch_instagram_media(
+        self,
+        media_id: str,
+        access_token: str,
+    ) -> Dict[str, Any]:
+        if settings.SIMULATION_MODE:
+            return {}
+        return await self._request_json(
+            "GET",
+            f"{self.base_url}/{media_id}",
+            params=self._authenticated_params(
+                {"fields": "id,caption,permalink,media_type,timestamp"},
+                access_token,
+            ),
+        )
+
+    async def publish_instagram_comment_reply(
+        self,
+        comment_id: str,
+        message: str,
+        access_token: str,
+    ) -> Dict[str, Any]:
+        if settings.SIMULATION_MODE:
+            raise MetaAPIError(
+                "Live Instagram comment replies are disabled while SIMULATION_MODE is enabled"
+            )
+        return await self._request_json(
+            "POST",
+            f"{self.base_url}/{comment_id}/replies",
+            data=self._authenticated_params({"message": message}, access_token),
+        )
+
     async def fetch_page_posts(
         self,
         page_id: str,
@@ -664,16 +886,46 @@ class MetaGraphClient:
             )
 
         data: Dict[str, Any] = {"message": message, "published": True}
+        endpoint = f"{self.base_url}/{page_id}/feed"
+        files = None
         if media_url:
-            data["link"] = media_url
+            local_asset = media_generation_service.resolve_local_asset(media_url)
+            if local_asset:
+                asset_path, mime_type = local_asset
+                endpoint = f"{self.base_url}/{page_id}/photos"
+                files = {
+                    "source": (
+                        asset_path.name,
+                        asset_path.read_bytes(),
+                        mime_type,
+                    )
+                }
+            else:
+                parsed_media_url = urlsplit(media_url)
+                if parsed_media_url.scheme not in {"http", "https"} or not parsed_media_url.netloc:
+                    raise MetaAPIError("The selected media asset is not available for Facebook publishing")
+                endpoint = f"{self.base_url}/{page_id}/photos"
+                data["url"] = media_url
         data = self._authenticated_params(data, access_token)
-        publish_response = await self._request_json(
-            "POST",
-            f"{self.base_url}/{page_id}/feed",
-            data=data,
-            timeout=20.0,
-        )
-        post_id = publish_response.get("id")
+        try:
+            publish_response = await self._request_json(
+                "POST",
+                endpoint,
+                data=data,
+                files=files,
+                timeout=20.0,
+            )
+        except MetaAPIError as exc:
+            uncertain = exc.http_status is None or exc.http_status >= 500
+            if uncertain:
+                raise MetaAPIError(
+                    "Meta publish outcome is uncertain; check the Page before retrying",
+                    http_status=exc.http_status,
+                    meta_error=exc.meta_error,
+                    publication_uncertain=True,
+                ) from exc
+            raise
+        post_id = publish_response.get("post_id") or publish_response.get("id")
         if not isinstance(post_id, str) or not post_id:
             raise MetaAPIError(
                 "Meta accepted the publish request but returned no post ID; publication is unverified",

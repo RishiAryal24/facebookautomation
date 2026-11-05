@@ -36,8 +36,12 @@ class Settings(BaseSettings):
     
     # Gemini AI
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_FALLBACK_MODEL: str = "gemini-3.5-flash-lite"
     ENABLE_LOCAL_AI_FALLBACK: bool = False
+    GEMINI_IMAGE_MODEL: str = "gemini-nano-banana-2.1"
+    MEDIA_STORAGE_DIR: Path = Path(__file__).resolve().parents[1] / "media"
+    MEDIA_PUBLIC_BASE_URL: str = ""
     
     # Meta / Facebook Graph API
     META_APP_ID: str = ""

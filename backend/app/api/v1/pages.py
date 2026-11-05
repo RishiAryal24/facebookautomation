@@ -138,6 +138,53 @@ async def get_page(page_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Page not found")
     return page
 
+@router.post(
+    "/{page_id}/instagram/discover",
+    dependencies=[Depends(require_roles(*PAGE_ADMIN_ROLES))],
+)
+async def discover_instagram_account(
+    page_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(FacebookPage).where(FacebookPage.id == page_id))
+    page = result.scalar_one_or_none()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+    try:
+        access_token = meta_client.get_page_access_token(page)
+        account = await meta_client.get_linked_instagram_account(
+            page.meta_page_id,
+            access_token,
+        )
+    except MetaAPIError as err:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(err),
+                "meta_error": err.meta_error or {},
+            },
+        ) from err
+    if account is None:
+        page.instagram_business_account_id = None
+        page.instagram_username = None
+        await db.commit()
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No linked Instagram Professional account was returned. "
+                "Link a Business or Creator account to this Facebook Page and verify instagram_basic access."
+            ),
+        )
+    page.instagram_business_account_id = str(account["id"])
+    username = account.get("username")
+    page.instagram_username = username if isinstance(username, str) else None
+    await db.commit()
+    await db.refresh(page)
+    return {
+        "instagram_business_account_id": page.instagram_business_account_id,
+        "instagram_username": page.instagram_username,
+    }
+
 @router.put(
     "/{page_id}",
     response_model=FacebookPageRead,
@@ -315,6 +362,7 @@ async def sync_page_posts(page_id: int, db: AsyncSession = Depends(get_db)):
                 message=p.get("message", "Post update"),
                 permalink_url=p.get("permalink_url"),
                 media_url=p.get("full_picture"),
+                facebook_status="published",
                 like_count=p.get("likes", {}).get("summary", {}).get("total_count", 0),
                 comment_count=p.get("comments", {}).get("summary", {}).get("total_count", 0)
             )

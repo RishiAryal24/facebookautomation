@@ -140,6 +140,8 @@ class FacebookPageRead(FacebookPageBase):
     id: int
     is_connected: bool
     token_status: str
+    instagram_business_account_id: Optional[str] = None
+    instagram_username: Optional[str] = None
     token_expires_at: Optional[datetime] = None
     meta_app_id: Optional[str] = None
     last_validated_at: Optional[datetime] = None
@@ -171,6 +173,16 @@ class PostRead(BaseModel):
     topic: Optional[str] = None
     content_category: Optional[str] = None
     content_language: Optional[str] = None
+    content_length: str = "standard"
+    missing_facts: List[str] = Field(default_factory=list)
+    media_status: str = "not_requested"
+    media_brief: Optional[str] = None
+    media_warning: Optional[str] = None
+    media_generation_attempts: int = 0
+    facebook_status: str = "not_requested"
+    instagram_status: str = "not_requested"
+    instagram_media_id: Optional[str] = None
+    instagram_permalink_url: Optional[str] = None
     approved_at: Optional[datetime] = None
     approved_by_user_id: Optional[int] = None
     rejection_reason: Optional[str] = None
@@ -193,10 +205,11 @@ class PostRead(BaseModel):
 class PostDraftGenerateRequest(BaseModel):
     page_id: int
     topic: Optional[str] = None
-    language: Optional[str] = "ne" # 'ne', 'en', 'bilingual'
-    tone: Optional[str] = "promotional" # promotional, tips, festive, engagement
+    language: Optional[str] = "en"
+    tone: Optional[str] = "professional and engaging"
     include_image: bool = True
     category: Optional[str] = None
+    content_length: Optional[str] = None
     request_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
 
     @field_validator("language")
@@ -205,6 +218,13 @@ class PostDraftGenerateRequest(BaseModel):
         if language is not None and language not in {"en", "ne", "bilingual"}:
             raise ValueError("Language must be en, ne, or bilingual")
         return language
+
+    @field_validator("content_length")
+    @classmethod
+    def validate_content_length(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value not in {"short", "standard", "detailed", "storytelling"}:
+            raise ValueError("Content length must be short, standard, detailed, or storytelling")
+        return value
 
 
 class ContentAutomationConfigUpdate(BaseModel):
@@ -219,6 +239,8 @@ class ContentAutomationConfigUpdate(BaseModel):
     categories: Optional[List[str]] = None
     approval_required: Optional[bool] = None
     brand_context: Optional[str] = Field(default=None, min_length=1, max_length=10000)
+    brand_profile: Optional[Dict[str, Any]] = None
+    default_content_length: Optional[str] = None
 
     @field_validator("frequency")
     @classmethod
@@ -256,6 +278,20 @@ class ContentAutomationConfigUpdate(BaseModel):
             return list(dict.fromkeys(values))
         return values
 
+    @field_validator("default_content_length")
+    @classmethod
+    def validate_default_content_length(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value not in {"short", "standard", "detailed", "storytelling"}:
+            raise ValueError("Default content length must be short, standard, detailed, or storytelling")
+        return value
+
+    @field_validator("brand_profile")
+    @classmethod
+    def validate_brand_profile(cls, value: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if value is not None and len(str(value)) > 20000:
+            raise ValueError("Brand profile must be no larger than 20,000 characters")
+        return value
+
     @field_validator("category_mode")
     @classmethod
     def validate_category_mode(cls, value: Optional[str]) -> Optional[str]:
@@ -289,6 +325,8 @@ class ContentAutomationConfigRead(BaseModel):
     approval_required: bool
     auto_publish_enabled: bool
     brand_context: str
+    brand_profile: Dict[str, Any] = Field(default_factory=dict)
+    default_content_length: str = "standard"
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
@@ -339,6 +377,15 @@ class PostPublishRequest(BaseModel):
     edited_message: Optional[str] = None
     media_url: Optional[str] = None
     confirm_publish: bool = False
+    platforms: List[str] = Field(default_factory=lambda: ["facebook"])
+
+    @field_validator("platforms")
+    @classmethod
+    def validate_platforms(cls, platforms: List[str]) -> List[str]:
+        supported = {"facebook", "instagram"}
+        if not platforms or len(platforms) != len(set(platforms)) or not set(platforms) <= supported:
+            raise ValueError("Select one or more distinct supported platforms: facebook, instagram")
+        return platforms
     model_config = ConfigDict(from_attributes=True)
 
     @field_validator("edited_message")
@@ -367,6 +414,7 @@ class CommentRead(BaseModel):
     page_id: int
     sender_id: Optional[str] = None
     sender_name: str
+    platform: str = "facebook"
     message: str
     detected_language: str
     sentiment: str

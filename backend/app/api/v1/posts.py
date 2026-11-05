@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 import uuid
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -33,7 +33,13 @@ from app.schemas.schemas import (
     PostPublishRequest,
 )
 from app.services.automation_runner import automation_engine
+from app.services.brand_knowledge import build_brand_profile
 from app.services.gemini_service import GeminiServiceError
+from app.services.media_generation import (
+    MediaGenerationError,
+    media_generation_service,
+)
+from app.services.meta_client import MetaAPIError, meta_client
 from app.api.v1.auth import get_current_user, require_roles
 
 router = APIRouter(
@@ -87,8 +93,15 @@ async def _get_content_config(
     )
     config = result.scalar_one_or_none()
     if config is None:
-        config = ContentGenerationConfig(page_id=page_id)
+        config = ContentGenerationConfig(
+            page_id=page_id,
+            brand_profile=build_brand_profile(None),
+        )
         db.add(config)
+        await db.commit()
+        await db.refresh(config)
+    elif not config.brand_profile:
+        config.brand_profile = build_brand_profile(None)
         await db.commit()
         await db.refresh(config)
     return config
@@ -118,12 +131,29 @@ async def update_content_automation_config(
 ):
     config = await _get_content_config(db, page_id)
     for field, value in update.model_dump(exclude_unset=True).items():
+        if field == "brand_profile":
+            value = build_brand_profile(value)
         setattr(config, field, value)
     config.approval_required = True
     config.auto_publish_enabled = False
     await db.commit()
     await db.refresh(config)
     return config
+
+
+@router.post(
+    "/media/upload",
+    dependencies=[Depends(require_roles(*CONTENT_EDITOR_ROLES))],
+)
+async def upload_content_media(file: UploadFile = File(...)):
+    """Store an administrator-selected image for an editable content draft."""
+    content = await file.read(media_generation_service.max_upload_bytes + 1)
+    try:
+        return media_generation_service.save_uploaded_image(content, file.content_type)
+    except MediaGenerationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        await file.close()
 
 
 @router.post(
@@ -168,7 +198,7 @@ async def generate_post_draft(
         select(Post.message)
         .where(
             Post.page_id == page.id,
-            Post.is_ai_generated.is_(True),
+            or_(Post.status == "published", Post.is_ai_generated.is_(True)),
             Post.message.is_not(None),
         )
         .order_by(Post.created_at.desc())
@@ -190,6 +220,8 @@ async def generate_post_draft(
     brand_context = "\n".join(
         item for item in (config.brand_context, page.brand_context) if item
     )
+    brand_profile = build_brand_profile(config.brand_profile)
+    content_length = draft_req.content_length or config.default_content_length
     run = ContentGenerationRun(
         page_id=page.id,
         run_key=run_key,
@@ -233,10 +265,13 @@ async def generate_post_draft(
             category=category,
             brand_context=brand_context,
             recent_messages=recent_messages,
+            content_length=content_length,
+            brand_profile=brand_profile,
+            include_image=draft_req.include_image,
             actor_user_id=current_user.id,
             generation_run=run,
         )
-    except GeminiServiceError as exc:
+    except (GeminiServiceError, MediaGenerationError) as exc:
         run.status = "failed"
         run.error_message = str(exc)
         run.completed_at = datetime.now(timezone.utc)
@@ -307,11 +342,13 @@ async def regenerate_post_draft(
                 item for item in (config.brand_context, post.page.brand_context) if item
             ),
             recent_messages=recent_messages,
+            content_length=config.default_content_length,
+            brand_profile=build_brand_profile(config.brand_profile),
             existing_post=post,
             actor_user_id=current_user.id,
             generation_run=run,
         )
-    except GeminiServiceError as exc:
+    except (GeminiServiceError, MediaGenerationError) as exc:
         run.status = "failed"
         run.error_message = str(exc)
         run.completed_at = datetime.now(timezone.utc)
@@ -326,6 +363,46 @@ async def regenerate_post_draft(
         )
         await db.commit()
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{post_id}/regenerate-media",
+    response_model=PostRead,
+    dependencies=[Depends(require_roles(*CONTENT_EDITOR_ROLES))],
+)
+async def regenerate_post_media(
+    post_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Queue a new image for a draft without waiting for the image provider."""
+    result = await db.execute(select(Post).where(Post.id == post_id))
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.status != "draft":
+        raise HTTPException(status_code=409, detail="Only draft posts can regenerate media")
+    if not post.media_brief:
+        raise HTTPException(
+            status_code=409,
+            detail="Regenerate the caption first to create a visual concept.",
+        )
+
+    topic = post.topic or post.content_category or "business technology"
+    post.media_generation_prompt = (
+        f"Create a polished, editorial-quality square social-media visual for PyLoom "
+        f"Technologies Pvt. Ltd. Subject: {topic}. Concept: {post.media_brief}. "
+        "Use a clean, contemporary technology-business aesthetic, realistic details, and "
+        "a restrained palette inspired by navy, teal, and warm neutral tones. Do not "
+        "include text, logos, invented product screens, fabricated metrics, or identifiable real people."
+    )
+    post.media_status = "queued"
+    post.media_url = None
+    post.media_warning = None
+    post.media_generation_attempts = 0
+    post.media_generation_started_at = None
+    await db.commit()
+    await db.refresh(post)
+    return post
 
 
 @router.put(
@@ -349,7 +426,16 @@ async def update_post_draft(
 
     post.message = draft_update.message
     if "media_url" in draft_update.model_fields_set:
+        if draft_update.media_url and not media_generation_service.resolve_local_asset(
+            draft_update.media_url
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Attach an image by uploading a supported asset first.",
+            )
         post.media_url = draft_update.media_url
+        post.media_status = "uploaded" if draft_update.media_url else "not_requested"
+        post.media_warning = None
     db.add(
         ActionLog(
             page_id=post.page_id,
@@ -610,7 +696,7 @@ async def publish_draft(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Publish an AI-generated draft post to Facebook."""
+    """Publish an approved draft to the explicitly selected platforms."""
     res = await db.execute(select(Post).options(selectinload(Post.page)).where(Post.id == post_id))
     post = res.scalar_one_or_none()
     if not post:
@@ -620,8 +706,10 @@ async def publish_draft(
             status_code=409,
             detail="Live Facebook publishing is disabled while SIMULATION_MODE is enabled.",
         )
-    if post.status not in {"approved", "scheduled"}:
+    if post.status not in {"approved", "scheduled", "partially_published", "failed", "published"}:
         raise HTTPException(status_code=409, detail="Approve this draft before publishing")
+    if post.status == "published" and (not post.is_ai_generated or not post.approved_at):
+        raise HTTPException(status_code=409, detail="Only an approved AI draft can be published to another platform.")
     if not pub_req.confirm_publish:
         raise HTTPException(
             status_code=400,
@@ -635,24 +723,88 @@ async def publish_draft(
             detail="Validate a live Page access token with publishing permissions before publishing.",
         )
 
-    success = await automation_engine.publish_draft_post(
-        db=db,
-        post=post,
-        edited_message=pub_req.edited_message,
-        media_url=pub_req.media_url
-    )
-    if not success:
+    message_to_post = pub_req.edited_message or post.message
+    media_to_post = pub_req.media_url or post.media_url
+    if not message_to_post or not message_to_post.strip():
+        raise HTTPException(status_code=422, detail="A non-empty caption is required.")
+    if "instagram" in pub_req.platforms:
+        if not post.page.instagram_business_account_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Discover and connect a linked Instagram Professional account first.",
+            )
+        if not media_to_post:
+            raise HTTPException(
+                status_code=422,
+                detail="Instagram publishing requires an image; Facebook text-only posts remain supported.",
+            )
+        try:
+            media_to_post = media_generation_service.instagram_compatible_media_url(media_to_post)
+            meta_client.public_media_url(media_to_post)
+        except (MetaAPIError, MediaGenerationError) as err:
+            raise HTTPException(status_code=422, detail=str(err)) from err
+    if (
+        "facebook" in pub_req.platforms
+        and post.facebook_status == "pending_verification"
+    ) or (
+        "instagram" in pub_req.platforms
+        and post.instagram_status == "pending_verification"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A prior platform publish is awaiting verification. Check the platform before retrying "
+                "to avoid creating duplicates."
+            ),
+        )
+
+    publish_results: Dict[str, bool] = {}
+    if "facebook" in pub_req.platforms:
+        publish_results["facebook"] = (
+            post.facebook_status == "published"
+            or await automation_engine.publish_draft_post(
+                db=db,
+                post=post,
+                edited_message=message_to_post,
+                media_url=media_to_post,
+            )
+        )
+    if "instagram" in pub_req.platforms:
+        publish_results["instagram"] = (
+            post.instagram_status == "published"
+            or await automation_engine.publish_instagram_draft(
+                db=db,
+                post=post,
+                message=message_to_post,
+                media_url=media_to_post,
+            )
+        )
+
+    selected_statuses = [
+        post.facebook_status if platform == "facebook" else post.instagram_status
+        for platform in pub_req.platforms
+    ]
+    if all(platform_status == "published" for platform_status in selected_statuses):
+        post.status = "published"
+    elif any(platform_status == "published" for platform_status in selected_statuses):
+        post.status = "partially_published"
+    elif any(platform_status == "pending_verification" for platform_status in selected_statuses):
+        post.status = "pending_verification"
+    else:
+        post.status = "failed"
+    await db.commit()
+    if not any(publish_results.values()):
         if post.status == "pending_verification":
             raise HTTPException(
                 status_code=502,
                 detail=(
-                    "Meta returned a post ID, but the post could not be verified. "
-                    "Check the Page before retrying to avoid duplicate posts."
+                    "A platform returned an ID but publication could not be verified. "
+                    "Check the platform before retrying to avoid duplicates."
                 ),
             )
         raise HTTPException(
             status_code=502,
-            detail="Meta did not confirm the post. Review the Action Log before retrying.",
+            detail="No selected platform confirmed the post. Review the Action Log before retrying.",
         )
 
     version_result = await db.execute(

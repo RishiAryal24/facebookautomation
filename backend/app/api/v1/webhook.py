@@ -58,6 +58,98 @@ async def handle_webhook_event(request: Request, db: AsyncSession = Depends(get_
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Webhook body must be a JSON object")
     
+    if payload.get("object") == "instagram":
+        entries = payload.get("entry", [])
+        if not isinstance(entries, list):
+            raise HTTPException(status_code=400, detail="Webhook entry must be a list")
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            instagram_account_id = entry.get("id")
+            if not instagram_account_id:
+                continue
+            page_result = await db.execute(
+                select(FacebookPage).where(
+                    FacebookPage.instagram_business_account_id == str(instagram_account_id)
+                )
+            )
+            page = page_result.scalar_one_or_none()
+            if not page or not page.automation_enabled:
+                continue
+            changes = entry.get("changes", [])
+            if not isinstance(changes, list):
+                continue
+            for change in changes:
+                if not isinstance(change, dict) or change.get("field") != "comments":
+                    continue
+                value = change.get("value", {})
+                if not isinstance(value, dict):
+                    continue
+                sender = value.get("from", {})
+                media = value.get("media", {})
+                if not isinstance(sender, dict):
+                    sender = {}
+                if not isinstance(media, dict):
+                    media = {}
+                comment_id = value.get("id") or value.get("comment_id")
+                media_id = media.get("id") or value.get("media_id")
+                message = value.get("text", value.get("message", ""))
+                sender_id = sender.get("id")
+                if (
+                    not comment_id
+                    or not media_id
+                    or not isinstance(message, str)
+                    or not message.strip()
+                ):
+                    logger.warning("Ignoring Instagram comment event with missing required fields")
+                    continue
+                if sender_id and str(sender_id) == str(instagram_account_id):
+                    continue
+
+                meta_post_id = f"instagram:{media_id}"
+                meta_comment_id = f"instagram:{comment_id}"
+                post_result = await db.execute(
+                    select(Post).where(Post.meta_post_id == meta_post_id)
+                )
+                post = post_result.scalar_one_or_none()
+                if post is None:
+                    caption = media.get("caption") or value.get("caption")
+                    post = Post(
+                        meta_post_id=meta_post_id,
+                        page_id=page.id,
+                        message=caption if isinstance(caption, str) else "Instagram Post",
+                        instagram_media_id=str(media_id),
+                        instagram_status="published",
+                        status="published",
+                        is_monitored=True,
+                    )
+                    db.add(post)
+                    await db.flush()
+                elif post.page_id != page.id:
+                    logger.warning("Ignoring Instagram comment event whose media belongs to another account")
+                    continue
+                username = sender.get("username")
+                sender_name = username if isinstance(username, str) else "Instagram User"
+                try:
+                    await automation_engine.process_incoming_comment(
+                        db=db,
+                        page=page,
+                        post=post,
+                        sender_name=sender_name,
+                        sender_id=str(sender_id) if sender_id else "",
+                        message=message.strip(),
+                        meta_comment_id=meta_comment_id,
+                        platform="instagram",
+                    )
+                except IntegrityError:
+                    await db.rollback()
+                    existing = await db.execute(
+                        select(Comment).where(Comment.meta_comment_id == meta_comment_id)
+                    )
+                    if existing.scalar_one_or_none() is None:
+                        raise
+        return {"status": "processed"}
+
     if payload.get("object") != "page":
         return {"status": "ignored"}
 

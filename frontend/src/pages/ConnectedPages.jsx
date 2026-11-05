@@ -170,6 +170,21 @@ export default function ConnectedPages({ onPagesUpdated }) {
     }
   };
 
+  const handleDiscoverInstagram = async (pageId) => {
+    try {
+      const response = await api.post(`/pages/${pageId}/instagram/discover`);
+      setConnectNotice(
+        response.data.instagram_username
+          ? `Instagram @${response.data.instagram_username} connected.`
+          : `Instagram account ${response.data.instagram_business_account_id} connected.`,
+      );
+      await fetchPages();
+      if (onPagesUpdated) onPagesUpdated();
+    } catch (err) {
+      alert(`Instagram account discovery failed: ${err.message}`);
+    }
+  };
+
   const handleValidateCredentials = async (pageId) => {
     setValidatingId(pageId);
     try {
@@ -350,6 +365,11 @@ export default function ConnectedPages({ onPagesUpdated }) {
                   CREATE_CONTENT: {page.page_tasks?.includes('CREATE_CONTENT') ? 'granted' : 'missing'}
                 </span>
               </div>
+              <p className="text-xs text-slate-600">
+                Instagram: {page.instagram_business_account_id
+                  ? `@${page.instagram_username || page.instagram_business_account_id}`
+                  : 'not connected'}
+              </p>
 
               {/* Toggles and Mode */}
               <div className="p-3 bg-slate-50 rounded-xl space-y-2.5 text-xs">
@@ -414,6 +434,12 @@ export default function ConnectedPages({ onPagesUpdated }) {
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   <span>Sync Feed</span>
+                </button>
+                <button
+                  onClick={() => handleDiscoverInstagram(page.id)}
+                  className="px-3 py-1.5 rounded-lg border border-pink-200 hover:bg-pink-50 text-pink-700 text-xs font-semibold"
+                >
+                  {page.instagram_business_account_id ? 'Refresh Instagram' : 'Connect Instagram'}
                 </button>
 
                 <div className="flex items-center space-x-2">

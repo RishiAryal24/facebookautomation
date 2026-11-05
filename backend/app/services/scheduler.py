@@ -3,7 +3,7 @@ from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,9 +18,11 @@ from app.models.entities import (
     Post,
     ScheduledPostRun,
 )
+from app.services.brand_knowledge import build_brand_profile
 from app.services.automation_runner import automation_engine
 from app.services.ads_manager import sync_campaign_delivery
 from app.services.gemini_service import GeminiServiceError
+from app.services.media_generation import MediaGenerationError, media_generation_service
 from app.services.meta_client import MetaAPIError, meta_client
 from app.services.meta_ads_client import MetaAdsError
 
@@ -186,7 +188,7 @@ async def _schedule_page_content(
             select(Post.message)
             .where(
                 Post.page_id == page.id,
-                Post.is_ai_generated.is_(True),
+                or_(Post.status == "published", Post.is_ai_generated.is_(True)),
                 Post.message.is_not(None),
             )
             .order_by(Post.created_at.desc())
@@ -207,9 +209,11 @@ async def _schedule_page_content(
                     item for item in (config.brand_context, page.brand_context) if item
                 ),
                 recent_messages=recent_messages,
+                content_length=config.default_content_length,
+                brand_profile=build_brand_profile(config.brand_profile),
                 generation_run=run,
             )
-        except (GeminiServiceError, SQLAlchemyError, ValueError) as exc:
+        except (GeminiServiceError, MediaGenerationError, SQLAlchemyError, ValueError) as exc:
             run_id = run.id
             await db.rollback()
             run = await db.get(ContentGenerationRun, run_id)
@@ -335,6 +339,78 @@ async def check_page_token_lifecycle():
         await db.commit()
 
 
+async def process_pending_media_generation() -> int:
+    """Generate queued post images without blocking caption creation or review."""
+    completed = 0
+    async with AsyncSessionLocal() as db:
+        stale_before = _database_utc(datetime.now(timezone.utc) - timedelta(minutes=15))
+        stale_result = await db.execute(
+            select(Post).where(
+                Post.media_status == "in_progress",
+                Post.media_generation_started_at < stale_before,
+            )
+        )
+        stale_posts = stale_result.scalars().all()
+        for stale_post in stale_posts:
+            stale_post.media_status = "queued"
+            stale_post.media_generation_started_at = None
+        if stale_posts:
+            await db.commit()
+
+        queued_result = await db.execute(
+            select(Post)
+            .where(
+                Post.status == "draft",
+                Post.media_status == "queued",
+                Post.media_generation_prompt.is_not(None),
+            )
+            .order_by(Post.created_at)
+            .limit(2)
+        )
+        post_ids = [post.id for post in queued_result.scalars().all()]
+
+    for post_id in post_ids:
+        async with AsyncSessionLocal() as db:
+            post = await db.get(Post, post_id)
+            if (
+                post is None
+                or post.status != "draft"
+                or post.media_status != "queued"
+                or not post.media_generation_prompt
+            ):
+                continue
+            prompt = post.media_generation_prompt
+            post.media_status = "in_progress"
+            post.media_generation_started_at = _database_utc(datetime.now(timezone.utc))
+            post.media_generation_attempts = (post.media_generation_attempts or 0) + 1
+            await db.commit()
+
+        try:
+            media = await media_generation_service.generate_image(prompt)
+        except MediaGenerationError as exc:
+            async with AsyncSessionLocal() as db:
+                post = await db.get(Post, post_id)
+                if post is not None and post.media_status == "in_progress":
+                    post.media_status = "failed"
+                    post.media_warning = str(exc)
+                    post.media_generation_started_at = None
+                    await db.commit()
+            logger.warning("Background image generation failed for draft %s: %s", post_id, exc)
+            continue
+
+        async with AsyncSessionLocal() as db:
+            post = await db.get(Post, post_id)
+            if post is not None and post.media_status == "in_progress":
+                post.media_url = media["media_url"]
+                post.media_status = "generated"
+                post.media_warning = None
+                post.media_generation_prompt = None
+                post.media_generation_started_at = None
+                await db.commit()
+                completed += 1
+    return completed
+
+
 def start_scheduler():
     """Start APScheduler's persistent, non-overlapping recurring checks."""
     if scheduler.running:
@@ -368,6 +444,16 @@ def start_scheduler():
         max_instances=1,
         coalesce=True,
         misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        process_pending_media_generation,
+        "interval",
+        seconds=5,
+        id="pending_media_generation",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=30,
     )
     scheduler.start()
     logger.info("APScheduler started; scheduled post checks run every five minutes")

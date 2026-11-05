@@ -13,10 +13,18 @@ export default function Login({ onLogin }) {
     setSubmitting(true);
     setError('');
     try {
-      const response = await api.post('/auth/login', { email, password });
+      const response = await api.post(
+        '/auth/login',
+        { email, password },
+        { timeout: 15000 },
+      );
       onLogin(response.data.access_token);
     } catch (loginError) {
-      setError(loginError.message);
+      setError(
+        ['ECONNABORTED', 'ETIMEDOUT'].includes(loginError.code)
+          ? 'The server is taking too long to respond. Please try again.'
+          : loginError.message,
+      );
     } finally {
       setSubmitting(false);
     }

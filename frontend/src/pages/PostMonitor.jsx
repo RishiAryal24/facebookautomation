@@ -9,8 +9,9 @@ import {
   EyeOff, 
   Sparkles, 
   Trash2, 
-  Edit3, 
-  Clock 
+  Edit3,
+  Clock,
+  ImagePlus,
 } from 'lucide-react';
 import api from '../api';
 
@@ -26,11 +27,13 @@ export default function PostMonitor({ onNavigate }) {
   const [draftMessage, setDraftMessage] = useState('');
   const [draftMediaUrl, setDraftMediaUrl] = useState('');
   const [savingDraft, setSavingDraft] = useState(false);
+  const [syncingCommentsId, setSyncingCommentsId] = useState(null);
 
   // Post Generator Form
   const [selectedPageId, setSelectedPageId] = useState('');
   const [postTopic, setPostTopic] = useState('चाडपर्वको विशेष अफर र नयाँ सामानहरू');
   const [postLang, setPostLang] = useState('ne');
+  const [contentLength, setContentLength] = useState('standard');
   const [postTone, setPostTone] = useState('promotional');
 
   const fetchPages = async () => {
@@ -79,6 +82,21 @@ export default function PostMonitor({ onNavigate }) {
     }
   };
 
+  const handleSyncComments = async (post) => {
+    setSyncingCommentsId(post.id);
+    try {
+      const response = await api.post(`/comments/sync-post/${post.id}`);
+      alert(
+        `${response.data.platform} comments: ${response.data.retrieved} retrieved, ` +
+        `${response.data.new_comments_processed} new comments queued.`,
+      );
+    } catch (err) {
+      alert(`Comment sync failed: ${err.message}`);
+    } finally {
+      setSyncingCommentsId(null);
+    }
+  };
+
   const handleGeneratePost = async (e) => {
     e.preventDefault();
     setGenerating(true);
@@ -87,6 +105,7 @@ export default function PostMonitor({ onNavigate }) {
         page_id: Number(selectedPageId),
         topic: postTopic,
         language: postLang,
+        content_length: contentLength,
         tone: postTone,
       });
       setShowGenerateModal(false);
@@ -118,6 +137,32 @@ export default function PostMonitor({ onNavigate }) {
       alert('Failed to save draft: ' + err.message);
     } finally {
       setSavingDraft(false);
+    }
+  };
+
+  const handleUploadDraftMedia = async (event) => {
+    const [file] = event.target.files || [];
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await api.post('/posts/media/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setDraftMediaUrl(response.data.media_url);
+    } catch (err) {
+      alert('Image upload failed: ' + err.message);
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const mediaSource = (mediaUrl) => {
+    if (!mediaUrl) return '';
+    try {
+      return new URL(mediaUrl, api.defaults.baseURL).toString();
+    } catch {
+      return '';
     }
   };
 
@@ -245,6 +290,11 @@ export default function PostMonitor({ onNavigate }) {
                     Facebook did not confirm this post. Review the Action Log.
                   </div>
                 )}
+                {post.status === 'partially_published' && (
+                  <div className="bg-amber-100 px-4 py-2 text-xs font-semibold text-amber-900">
+                    Cross-posting is incomplete. Check each platform status in AI Content before retrying.
+                  </div>
+                )}
                 <div>
                   {/* Status Banner for Draft */}
                   {isDraft && (
@@ -252,14 +302,24 @@ export default function PostMonitor({ onNavigate }) {
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" /> Post Draft (Pending Review)
                       </span>
-                      <span>Ready to Publish</span>
+                      <span>{post.media_url ? 'Caption and image ready for review' : 'Caption ready — image optional'}</span>
+                    </div>
+                  )}
+                  {['queued', 'in_progress'].includes(post.media_status) && (
+                    <div className="px-4 py-2 text-xs text-indigo-800 bg-indigo-50" role="status">
+                      Image is generating in the background. You can review the caption now.
+                    </div>
+                  )}
+                  {post.media_status === 'failed' && (
+                    <div className="px-4 py-2 text-xs text-rose-800 bg-rose-50">
+                      Image generation failed. The caption remains available for review.
                     </div>
                   )}
 
                   {post.media_url && (
                     <div className="h-48 w-full bg-slate-100 overflow-hidden relative">
                       <img
-                        src={post.media_url}
+                        src={mediaSource(post.media_url)}
                         alt="Post media"
                         className="w-full h-full object-cover"
                       />
@@ -277,6 +337,12 @@ export default function PostMonitor({ onNavigate }) {
                       <span className="font-mono text-[10px]">ID: {post.meta_post_id}</span>
                       <span>{new Date(post.created_at).toLocaleDateString()}</span>
                     </div>
+                    {!isDraft && (
+                      <p className="text-xs text-slate-500">
+                        Facebook: {post.facebook_status || 'not requested'} · Instagram: {post.instagram_status || 'not requested'}
+                        {post.instagram_permalink_url && <> · <a href={post.instagram_permalink_url} target="_blank" rel="noreferrer" className="text-pink-700 underline">Instagram post</a></>}
+                      </p>
+                    )}
 
                     {isDraft && editingDraftId === post.id ? (
                       <div className="space-y-2">
@@ -291,20 +357,39 @@ export default function PostMonitor({ onNavigate }) {
                           className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-800"
                         />
                         <label className="block text-xs font-semibold text-slate-600" htmlFor={`draft-media-${post.id}`}>
-                          Media URL (optional)
+                          <span className="flex items-center gap-1">
+                            <ImagePlus className="h-4 w-4" /> Upload an approved PNG or JPEG image (up to 10 MB)
+                          </span>
                         </label>
                         <input
                           id={`draft-media-${post.id}`}
-                          type="url"
-                          value={draftMediaUrl}
-                          onChange={(event) => setDraftMediaUrl(event.target.value)}
+                          type="file"
+                          accept="image/png,image/jpeg"
+                          onChange={handleUploadDraftMedia}
                           className="w-full rounded-xl border border-slate-300 bg-white p-2 text-sm text-slate-800"
                         />
+                        {draftMediaUrl && <img src={mediaSource(draftMediaUrl)} alt="Selected post visual" className="max-h-48 rounded-xl border object-contain" />}
+                        {draftMediaUrl && (
+                          <button type="button" onClick={() => setDraftMediaUrl('')} className="text-xs text-rose-700">
+                            Remove selected image
+                          </button>
+                        )}
                       </div>
                     ) : (
-                      <p className="text-sm text-slate-800 leading-relaxed font-normal whitespace-pre-line">
-                        {post.message || 'No caption text.'}
-                      </p>
+                      <div className="space-y-3">
+                        <p className="text-sm text-slate-800 leading-relaxed font-normal whitespace-pre-line">
+                          {post.message || 'No caption text.'}
+                        </p>
+                        {post.media_brief && (
+                          <p className="text-xs text-slate-500"><strong>Visual concept:</strong> {post.media_brief}</p>
+                        )}
+                        {post.missing_facts?.length > 0 && (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                            <strong>Administrator fact check:</strong>
+                            <ul className="mt-1 list-inside list-disc">{post.missing_facts.map((fact) => <li key={fact}>{fact}</li>)}</ul>
+                          </div>
+                        )}
+                      </div>
                     )}
                     {post.generation_source === 'local_fallback' && (
                       <p className="text-xs font-semibold text-amber-700">
@@ -372,6 +457,13 @@ export default function PostMonitor({ onNavigate }) {
                       </div>
 
                       <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleSyncComments(post)}
+                          disabled={syncingCommentsId === post.id}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 text-xs font-semibold"
+                        >
+                          {syncingCommentsId === post.id ? 'Syncing…' : 'Sync comments'}
+                        </button>
                         <button
                           onClick={() => handleToggleMonitoring(post.id)}
                           className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
@@ -487,6 +579,19 @@ export default function PostMonitor({ onNavigate }) {
                     <option value="tips">Educational Tips</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Caption length</label>
+                <select
+                  value={contentLength}
+                  onChange={(event) => setContentLength(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 p-2.5"
+                >
+                  <option value="short">Short · 60–100 words</option>
+                  <option value="standard">Standard · 120–200 words</option>
+                  <option value="detailed">Detailed · 200–300 words</option>
+                  <option value="storytelling">Storytelling · 180–350 words</option>
+                </select>
               </div>
 
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800">

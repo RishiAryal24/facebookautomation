@@ -112,7 +112,7 @@ export default function ApprovalQueue({ onQueueUpdated }) {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Review, edit, or regenerate bilingual responses before publishing to Facebook (ANNEX A §2.4).
+            Review, edit, or regenerate bilingual responses before replying on Facebook or Instagram.
           </p>
         </div>
         <button
@@ -138,7 +138,7 @@ export default function ApprovalQueue({ onQueueUpdated }) {
           </div>
           <h3 className="font-bold text-slate-900">All Caught Up!</h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            There are no comments waiting for approval. New comments from monitored Facebook Pages will appear here.
+            There are no comments waiting for approval. New comments arrive through configured Meta webhooks or manual post sync.
           </p>
         </div>
       ) : (
@@ -157,6 +157,9 @@ export default function ApprovalQueue({ onQueueUpdated }) {
                 <div className="p-4 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
                   <div className="flex items-center space-x-2">
                     <span className="font-bold text-slate-900 text-sm">{comment.sender_name}</span>
+                    <span className="rounded-md bg-pink-50 px-2 py-0.5 text-[10px] font-semibold capitalize text-pink-700">
+                      {comment.platform || 'facebook'}
+                    </span>
                     {comment.is_simulated && (
                       <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">
                         Simulation only
@@ -318,18 +321,20 @@ export default function ApprovalQueue({ onQueueUpdated }) {
 
                   {/* Action Bar */}
                   <div className="pl-11 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                    <label className="flex items-center space-x-2 text-xs text-slate-600 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={alsoLike}
-                        onChange={(e) => setAlsoLike(e.target.checked)}
-                        className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="flex items-center gap-1">
-                        <ThumbsUp className="w-3 h-3 text-blue-600" />
-                        Also like customer's comment (ANNEX A §2.5)
-                      </span>
-                    </label>
+                    {comment.platform !== 'instagram' && (
+                      <label className="flex items-center space-x-2 text-xs text-slate-600 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={alsoLike}
+                          onChange={(e) => setAlsoLike(e.target.checked)}
+                          className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="flex items-center gap-1">
+                          <ThumbsUp className="w-3 h-3 text-blue-600" />
+                          Also like customer's comment
+                        </span>
+                      </label>
+                    )}
 
                     <div className="flex items-center space-x-2">
                       <button

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -34,6 +35,12 @@ app = FastAPI(
     version=settings.VERSION,
     description="Enterprise AI-Powered Facebook Page Engagement & Automation System (PyLoom)",
     lifespan=lifespan
+)
+settings.MEDIA_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+app.mount(
+    "/media",
+    StaticFiles(directory=settings.MEDIA_STORAGE_DIR),
+    name="media",
 )
 
 # CORS Middleware

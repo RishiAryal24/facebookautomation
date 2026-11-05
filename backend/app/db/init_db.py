@@ -31,6 +31,8 @@ async def init_models():
                 "last_validated_at": "TIMESTAMP",
                 "granted_permissions": "JSON",
                 "page_tasks": "JSON",
+                "instagram_business_account_id": "VARCHAR(100)",
+                "instagram_username": "VARCHAR(255)",
                 "timezone": "VARCHAR(64) NOT NULL DEFAULT 'Asia/Kathmandu'",
             },
             "posts": {
@@ -44,10 +46,27 @@ async def init_models():
                 "approved_at": "TIMESTAMP",
                 "approved_by_user_id": "INTEGER REFERENCES users(id)",
                 "rejection_reason": "TEXT",
+                "content_length": "VARCHAR(20) NOT NULL DEFAULT 'standard'",
+                "missing_facts": "JSON NOT NULL DEFAULT '[]'",
+                "media_status": "VARCHAR(20) NOT NULL DEFAULT 'not_requested'",
+                "media_brief": "TEXT",
+                "media_warning": "TEXT",
+                "media_generation_prompt": "TEXT",
+                "media_generation_attempts": "INTEGER NOT NULL DEFAULT 0",
+                "media_generation_started_at": "TIMESTAMP",
+                "facebook_status": "VARCHAR(30) NOT NULL DEFAULT 'not_requested'",
+                "instagram_status": "VARCHAR(30) NOT NULL DEFAULT 'not_requested'",
+                "instagram_media_id": "VARCHAR(150)",
+                "instagram_permalink_url": "TEXT",
+            },
+            "content_generation_configs": {
+                "brand_profile": "JSON NOT NULL DEFAULT '{}'",
+                "default_content_length": "VARCHAR(20) NOT NULL DEFAULT 'standard'",
             },
             "comments": {
                 "ai_generation_source": "VARCHAR(30)",
                 "is_simulated": "BOOLEAN NOT NULL DEFAULT FALSE",
+                "platform": "VARCHAR(20) NOT NULL DEFAULT 'facebook'",
             },
         }
 
@@ -65,6 +84,12 @@ async def init_models():
                             f"{column_name} {column_definition}"
                         )
                     )
+        await conn.execute(
+            text(
+                "UPDATE posts SET facebook_status = 'published' "
+                "WHERE status = 'published' AND facebook_status = 'not_requested'"
+            )
+        )
 
 async def seed_data():
     """Seed configured administrator, restricted keywords, and demo records."""

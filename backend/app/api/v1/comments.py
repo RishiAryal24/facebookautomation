@@ -15,6 +15,7 @@ from app.schemas.schemas import (
 )
 from app.services.automation_runner import automation_engine
 from app.services.gemini_service import GeminiServiceError, gemini_service
+from app.services.meta_client import MetaAPIError, meta_client
 from app.api.v1.auth import get_current_user, require_roles
 
 router = APIRouter(
@@ -87,6 +88,93 @@ async def list_comments(
     return output
 
 @router.post(
+    "/sync-post/{post_id}",
+    dependencies=[Depends(require_roles(*COMMENT_OPERATOR_ROLES))],
+)
+async def sync_post_comments(
+    post_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Post)
+        .options(selectinload(Post.page))
+        .where(Post.id == post_id)
+    )
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if settings.SIMULATION_MODE:
+        raise HTTPException(
+            status_code=409,
+            detail="Live comment synchronization is disabled while SIMULATION_MODE is enabled.",
+        )
+    if not post.page or post.page.token_status != "valid":
+        raise HTTPException(status_code=409, detail="Connect and validate the Page access token first.")
+    try:
+        access_token = meta_client.get_page_access_token(post.page)
+        if post.meta_post_id.startswith("instagram:"):
+            if not post.page.instagram_business_account_id:
+                raise HTTPException(status_code=409, detail="No linked Instagram Professional account is connected.")
+            instagram_media = await meta_client.fetch_instagram_media(
+                post.meta_post_id.removeprefix("instagram:"),
+                access_token,
+            )
+            caption = instagram_media.get("caption")
+            if isinstance(caption, str) and caption.strip():
+                post.message = caption
+            permalink = instagram_media.get("permalink")
+            if isinstance(permalink, str):
+                post.permalink_url = permalink
+            remote_comments = await meta_client.fetch_instagram_comments(
+                post.meta_post_id.removeprefix("instagram:"),
+                access_token,
+            )
+            platform = "instagram"
+        else:
+            remote_comments = await meta_client.fetch_post_comments(
+                post.meta_post_id,
+                access_token,
+            )
+            platform = "facebook"
+    except MetaAPIError as err:
+        raise HTTPException(
+            status_code=502,
+            detail={"message": str(err), "meta_error": err.meta_error or {}},
+        ) from err
+
+    processed = 0
+    for remote in remote_comments:
+        if not isinstance(remote, dict):
+            continue
+        sender = remote.get("from", {})
+        if not isinstance(sender, dict):
+            sender = {}
+        message = remote.get("text") if platform == "instagram" else remote.get("message")
+        comment_id = remote.get("id")
+        if not isinstance(message, str) or not message.strip() or not comment_id:
+            continue
+        sender_id = sender.get("id")
+        if platform == "instagram":
+            sender_name = remote.get("username") or sender.get("username") or "Instagram User"
+            stored_comment_id = f"instagram:{comment_id}"
+        else:
+            sender_name = sender.get("name") or "Facebook User"
+            stored_comment_id = str(comment_id)
+        comment = await automation_engine.process_incoming_comment(
+            db=db,
+            page=post.page,
+            post=post,
+            sender_name=str(sender_name),
+            sender_id=str(sender_id) if sender_id else "",
+            message=message.strip(),
+            meta_comment_id=stored_comment_id,
+            platform=platform,
+        )
+        if comment is not None:
+            processed += 1
+    return {"platform": platform, "retrieved": len(remote_comments), "new_comments_processed": processed}
+
+@router.post(
     "/{comment_id}/approve",
     response_model=CommentRead,
     dependencies=[Depends(require_roles(*COMMENT_OPERATOR_ROLES))],
@@ -96,7 +184,7 @@ async def approve_comment(
     approve_data: CommentApproveRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """Approve and publish an AI-generated comment to Facebook."""
+    """Approve and publish an AI-generated comment reply."""
     query = select(Comment).options(selectinload(Comment.page), selectinload(Comment.post)).where(Comment.id == comment_id)
     res = await db.execute(query)
     comment = res.scalar_one_or_none()
@@ -109,7 +197,7 @@ async def approve_comment(
     if settings.SIMULATION_MODE:
         raise HTTPException(
             status_code=409,
-            detail="Live Facebook comment publishing is disabled while SIMULATION_MODE is enabled.",
+            detail="Live comment replies are disabled while SIMULATION_MODE is enabled.",
         )
 
     success = await automation_engine.approve_and_publish_comment(

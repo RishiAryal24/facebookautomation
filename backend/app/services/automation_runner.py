@@ -13,7 +13,9 @@ from app.models.entities import (
     RestrictedKeyword, AutomationRule, ActionLog, ActionStatus,
     PostContentVersion, ContentGenerationRun,
 )
+from app.services.brand_knowledge import build_brand_profile
 from app.services.gemini_service import GeminiServiceError, gemini_service
+from app.services.media_generation import MediaGenerationError
 from app.services.meta_client import MetaAPIError, meta_client
 
 class AutomationEngine:
@@ -95,6 +97,7 @@ class AutomationEngine:
         message: str,
         meta_comment_id: str,
         is_simulated: bool = False,
+        platform: str = "facebook",
     ) -> Comment:
         """Core automation pipeline for an incoming comment."""
         # 1. Deduplication check
@@ -168,6 +171,7 @@ class AutomationEngine:
             page_id=page.id,
             sender_id=sender_id,
             sender_name=sender_name,
+            platform=platform,
             message=message,
             detected_language=detected_lang,
             sentiment=sentiment,
@@ -189,10 +193,17 @@ class AutomationEngine:
             try:
                 access_token = meta_client.get_page_access_token(page)
                 # Post reply
-                await meta_client.publish_comment_reply(meta_comment_id, ai_draft, access_token)
+                if platform == "instagram":
+                    await meta_client.publish_instagram_comment_reply(
+                        meta_comment_id.removeprefix("instagram:"),
+                        ai_draft,
+                        access_token,
+                    )
+                else:
+                    await meta_client.publish_comment_reply(meta_comment_id, ai_draft, access_token)
                 
                 # Optional policy-compliant like
-                if page.auto_like_enabled:
+                if platform == "facebook" and page.auto_like_enabled:
                     await meta_client.like_comment(meta_comment_id, access_token)
                     comment.is_liked = True
                     page.total_likes_given += 1
@@ -262,9 +273,20 @@ class AutomationEngine:
         try:
             access_token = meta_client.get_page_access_token(page)
             # Publish reply to Meta
-            await meta_client.publish_comment_reply(comment.meta_comment_id, reply_to_post, access_token)
+            if comment.platform == "instagram":
+                await meta_client.publish_instagram_comment_reply(
+                    comment.meta_comment_id.removeprefix("instagram:"),
+                    reply_to_post,
+                    access_token,
+                )
+            else:
+                await meta_client.publish_comment_reply(
+                    comment.meta_comment_id,
+                    reply_to_post,
+                    access_token,
+                )
             
-            if also_like and not comment.is_liked:
+            if comment.platform == "facebook" and also_like and not comment.is_liked:
                 await meta_client.like_comment(comment.meta_comment_id, access_token)
                 comment.is_liked = True
                 page.total_likes_given += 1
@@ -317,8 +339,25 @@ class AutomationEngine:
         existing_post: Optional[Post] = None,
         actor_user_id: Optional[int] = None,
         generation_run: Optional[ContentGenerationRun] = None,
+        content_length: str = "standard",
+        brand_profile: Optional[Dict[str, Any]] = None,
+        include_image: bool = True,
     ) -> Post:
         """Generate a Facebook draft. Content generation never publishes to Meta."""
+        image_brief = None
+        image_prompt = None
+        if include_image:
+            visual_topic = topic or category or "business technology"
+            image_prompt = (
+                f"Create a polished, editorial-quality square social-media visual for PyLoom "
+                f"Technologies Pvt. Ltd. Subject: {visual_topic}. "
+                "Use the following verified visual direction from the content draft: "
+                "{image_brief}. Use a clean, contemporary technology-business "
+                "aesthetic, realistic details, and a restrained palette inspired by navy, "
+                "teal, and warm neutral tones. Do not include text, logos, invented product "
+                "screens, fabricated metrics, or identifiable real people."
+            )
+
         ai_post = await gemini_service.generate_social_post(
             brand_context=brand_context or page.brand_context or "",
             topic=topic or page.post_topics_prompt or "Special product deals and customer benefits",
@@ -326,17 +365,34 @@ class AutomationEngine:
             tone=tone or page.response_tone or "professional and engaging",
             category=category,
             recent_posts=recent_messages,
+            content_length=content_length,
+            brand_profile=build_brand_profile(brand_profile),
         )
 
         message = ai_post.get("message")
         if not isinstance(message, str) or not message.strip() or len(message) > 63206:
             raise GeminiServiceError("Gemini returned content that did not pass draft validation")
 
+        if include_image:
+            image_brief = ai_post.get("image_brief")
+            if not isinstance(image_brief, str) or not image_brief.strip():
+                raise MediaGenerationError("Gemini did not return a usable visual concept")
+            image_prompt = image_prompt.format(image_brief=image_brief.strip())
+
         if existing_post is not None:
             if existing_post.status != "draft":
                 raise ValueError("Only draft posts can be regenerated")
             existing_post.message = message.strip()
-            existing_post.media_url = ai_post.get("media_url")
+            if include_image:
+                existing_post.media_url = None
+            existing_post.media_status = "queued" if include_image else "not_requested"
+            existing_post.media_warning = None
+            existing_post.media_generation_prompt = image_prompt
+            existing_post.media_generation_attempts = 0
+            existing_post.media_generation_started_at = None
+            existing_post.missing_facts = ai_post.get("missing_facts", [])
+            existing_post.content_length = content_length
+            existing_post.media_brief = image_brief if include_image else None
             existing_post.generation_source = ai_post.get("source")
             existing_post.topic = topic or existing_post.topic
             existing_post.content_category = category or existing_post.content_category
@@ -348,7 +404,7 @@ class AutomationEngine:
                 meta_post_id=f"{page.meta_page_id}_draft_{uuid.uuid4().hex}",
                 page_id=page.id,
                 message=message.strip(),
-                media_url=ai_post.get("media_url"),
+                media_url=None,
                 is_monitored=True,
                 is_ai_generated=True,
                 generation_source=ai_post.get("source"),
@@ -356,6 +412,11 @@ class AutomationEngine:
                 topic=topic,
                 content_category=category,
                 content_language=language,
+                content_length=content_length,
+                missing_facts=ai_post.get("missing_facts", []),
+                media_status="queued" if include_image else "not_requested",
+                media_brief=image_brief if include_image else None,
+                media_generation_prompt=image_prompt,
             )
             db.add(post)
             event_type = "generated"
@@ -407,7 +468,13 @@ class AutomationEngine:
         page = post.page
         message_to_post = edited_message or post.message
         img_to_post = media_url or post.media_url
-        if post.status not in {"approved", "scheduled"} or not message_to_post or not message_to_post.strip():
+        if post.status not in {
+            "approved",
+            "scheduled",
+            "partially_published",
+            "failed",
+            "published",
+        } or not message_to_post or not message_to_post.strip():
             return False
 
         try:
@@ -426,6 +493,7 @@ class AutomationEngine:
                 )
             post.meta_post_id = res.get("id", post.meta_post_id)
             post.permalink_url = res.get("permalink_url", post.permalink_url)
+            post.facebook_status = "published"
             post.status = "published"
             post.message = message_to_post
             post.media_url = img_to_post
@@ -443,6 +511,7 @@ class AutomationEngine:
             return True
         except (MetaAPIError, InvalidToken) as e:
             is_uncertain = isinstance(e, MetaAPIError) and e.publication_uncertain
+            post.facebook_status = "pending_verification" if is_uncertain else "failed"
             post.status = "pending_verification" if is_uncertain else "failed"
             meta_error = e.meta_error if isinstance(e, MetaAPIError) else None
             log = ActionLog(
@@ -458,6 +527,69 @@ class AutomationEngine:
                 },
             )
             db.add(log)
+            await db.commit()
+            return False
+
+    async def publish_instagram_draft(
+        self,
+        db: AsyncSession,
+        post: Post,
+        message: str,
+        media_url: str,
+    ) -> bool:
+        page = post.page
+        try:
+            if not page.instagram_business_account_id:
+                raise MetaAPIError("No linked Instagram Professional account is connected")
+            access_token = meta_client.get_page_access_token(page)
+            result = await meta_client.publish_instagram_image(
+                page.instagram_business_account_id,
+                message,
+                media_url,
+                access_token,
+            )
+            if result.get("verified") is not True:
+                raise MetaAPIError(
+                    "Instagram did not verify the published media",
+                    published_post_id=result.get("id"),
+                    publication_uncertain=True,
+                )
+            post.instagram_media_id = result["id"]
+            post.instagram_permalink_url = result["permalink_url"]
+            post.instagram_status = "published"
+            post.message = message
+            post.media_url = media_url
+            post.published_at = post.published_at or datetime.now(timezone.utc)
+            db.add(
+                ActionLog(
+                    page_id=page.id,
+                    action_type="instagram_post_published",
+                    status=ActionStatus.SUCCESS,
+                    details={
+                        "instagram_media_id": post.instagram_media_id,
+                        "permalink_url": post.instagram_permalink_url,
+                    },
+                )
+            )
+            await db.commit()
+            return True
+        except (MetaAPIError, InvalidToken) as exc:
+            uncertain = isinstance(exc, MetaAPIError) and exc.publication_uncertain
+            post.instagram_status = "pending_verification" if uncertain else "failed"
+            if uncertain:
+                post.instagram_media_id = getattr(exc, "published_post_id", None)
+            db.add(
+                ActionLog(
+                    page_id=page.id,
+                    action_type="instagram_post_published",
+                    status=ActionStatus.PENDING if uncertain else ActionStatus.FAILED,
+                    error_message=str(exc),
+                    details={
+                        "instagram_media_id": getattr(exc, "published_post_id", None),
+                        "verification_required": uncertain,
+                    },
+                )
+            )
             await db.commit()
             return False
 

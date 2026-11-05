@@ -11,7 +11,7 @@ import Simulator from './pages/Simulator';
 import Login from './pages/Login';
 import AdsManager from './pages/AdsManager';
 import ContentAutomation from './pages/ContentAutomation';
-import api, { setAccessToken } from './api';
+import api, { refreshAccessToken, setAccessToken } from './api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -57,19 +57,20 @@ export default function App() {
     };
 
     window.addEventListener('auth:expired', handleAuthExpired);
-    api.post('/auth/refresh')
-      .then((response) => {
+    refreshAccessToken()
+      .then((token) => {
         if (active) {
-          setAccessToken(response.data.access_token);
-          setAccessTokenState(response.data.access_token);
+          setAccessTokenState(token);
           void fetchMetrics();
           void fetchSimulationMode();
         }
-      })
-      .catch(() => {
+      }).catch((error) => {
         if (active) {
           setAccessToken(null);
           setAccessTokenState(null);
+          if (error.response?.status !== 401) {
+            console.warn('Could not restore the sign-in session:', error.message);
+          }
         }
       })
       .finally(() => {

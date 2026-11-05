@@ -23,6 +23,7 @@ def _generate(client, *, request_id, topic="Brand automation"):
             "topic": topic,
             "language": "en",
             "category": "AI and automation",
+            "include_image": False,
             "request_id": request_id,
         },
     )
@@ -80,6 +81,7 @@ def test_generate_now_passes_selected_language_to_gemini(client, monkeypatch, la
             "page_id": 1,
             "topic": "Language coverage",
             "language": language,
+            "include_image": False,
             "request_id": f"language-{language}",
         },
     )
@@ -87,6 +89,140 @@ def test_generate_now_passes_selected_language_to_gemini(client, monkeypatch, la
     assert response.status_code == 200
     assert response.json()["content_language"] == language
     assert calls[0]["language"] == language
+
+
+def test_generate_now_defaults_to_visual_and_persists_missing_product_facts(client, monkeypatch):
+    from app.services.gemini_service import gemini_service
+    from app.services.media_generation import media_generation_service
+
+    calls = []
+
+    async def generate_post(**kwargs):
+        calls.append(kwargs)
+        return {
+            "message": "A verified-content draft about hospital operations.",
+            "image_brief": "A modern, abstract hospital workflow illustration.",
+            "missing_facts": [
+                "Verified description for PyLoom AI HMS",
+                "Approved features for PyLoom AI HMS",
+            ],
+            "source": "gemini_api",
+        }
+
+    async def generate_image(prompt):
+        assert "PyLoom AI HMS" in prompt
+        assert "modern, abstract hospital workflow illustration" in prompt
+        return {"media_url": "/media/generated/verified-test.png", "mime_type": "image/png"}
+
+    monkeypatch.setattr(gemini_service, "generate_social_post", generate_post)
+    monkeypatch.setattr(media_generation_service, "generate_image", generate_image)
+    _login_as_admin(client)
+    response = client.post(
+        "/api/v1/posts/generate-draft",
+        json={
+            "page_id": 1,
+            "topic": "PyLoom AI HMS",
+            "language": "en",
+            "request_id": "visual-product-draft",
+        },
+    )
+
+    assert response.status_code == 200
+    draft = response.json()
+    assert draft["media_url"] is None
+    assert draft["media_status"] == "queued"
+    assert draft["media_brief"] == "A modern, abstract hospital workflow illustration."
+    assert draft["content_length"] == "standard"
+    assert len(draft["missing_facts"]) == 2
+    assert calls[0]["content_length"] == "standard"
+    assert calls[0]["brand_profile"]["products"][0]["approved_features"] == []
+
+    from app.services.scheduler import process_pending_media_generation
+
+    assert asyncio.run(process_pending_media_generation()) == 1
+    generated = client.get("/api/v1/posts/", params={"page_id": 1})
+    image_post = next(item for item in generated.json() if item["id"] == draft["id"])
+    assert image_post["media_url"] == "/media/generated/verified-test.png"
+    assert image_post["media_status"] == "generated"
+
+
+def test_generate_now_returns_caption_without_waiting_for_image(client, monkeypatch):
+    from app.services.gemini_service import gemini_service
+    from app.services.media_generation import media_generation_service
+
+    image_calls = []
+
+    async def generate_post(**kwargs):
+        return {
+            "message": "A timely and relevant draft caption.",
+            "image_brief": "A relevant editorial business visual.",
+            "missing_facts": [],
+            "source": "gemini_api",
+        }
+
+    async def generate_image(prompt):
+        image_calls.append(prompt)
+        return {"media_url": "/media/generated/concurrent-test.png", "mime_type": "image/png"}
+
+    monkeypatch.setattr(gemini_service, "generate_social_post", generate_post)
+    monkeypatch.setattr(media_generation_service, "generate_image", generate_image)
+    _login_as_admin(client)
+    response = client.post(
+        "/api/v1/posts/generate-draft",
+        json={
+            "page_id": 1,
+            "topic": "Concurrent generation topic",
+            "language": "en",
+            "request_id": "concurrent-generation",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "A timely and relevant draft caption."
+    assert response.json()["media_status"] == "queued"
+    assert image_calls == []
+
+
+def test_requested_visual_failure_preserves_caption_as_a_text_only_draft(client, monkeypatch):
+    from app.services.gemini_service import gemini_service
+    from app.services.media_generation import MediaGenerationError, media_generation_service
+
+    async def generate_post(**kwargs):
+        return {
+            "message": "A truthful draft that must not be presented as a complete package.",
+            "image_brief": "A factual and relevant image concept.",
+            "missing_facts": [],
+            "source": "gemini_api",
+        }
+
+    async def fail_image(prompt):
+        raise MediaGenerationError("The configured image-generation provider failed")
+
+    monkeypatch.setattr(gemini_service, "generate_social_post", generate_post)
+    monkeypatch.setattr(media_generation_service, "generate_image", fail_image)
+    _login_as_admin(client)
+    response = client.post(
+        "/api/v1/posts/generate-draft",
+        json={
+            "page_id": 1,
+            "topic": "Visual generation failure",
+            "language": "en",
+            "request_id": "image-failure-request",
+        },
+    )
+
+    assert response.status_code == 200
+    draft = response.json()
+    assert draft["message"].startswith("A truthful draft")
+    assert draft["media_status"] == "queued"
+
+    from app.services.scheduler import process_pending_media_generation
+
+    assert asyncio.run(process_pending_media_generation()) == 0
+    stored = client.get("/api/v1/posts/", params={"page_id": 1})
+    failed_draft = next(item for item in stored.json() if item["id"] == draft["id"])
+    assert failed_draft["media_status"] == "failed"
+    assert failed_draft["media_warning"] == "The configured image-generation provider failed"
 
 
 def test_content_settings_are_persisted_and_auto_publish_is_forced_off(client):
@@ -97,6 +233,8 @@ def test_content_settings_are_persisted_and_auto_publish_is_forced_off(client):
     assert current.json()["timezone"] == "Asia/Kathmandu"
     assert current.json()["approval_required"] is True
     assert current.json()["auto_publish_enabled"] is False
+    assert current.json()["default_content_length"] == "standard"
+    assert current.json()["brand_profile"]["company_name"] == "PyLoom Technologies Pvt. Ltd."
 
     updated = client.put(
         "/api/v1/posts/automation-config",
@@ -108,6 +246,17 @@ def test_content_settings_are_persisted_and_auto_publish_is_forced_off(client):
             "posts_per_cycle": 2,
             "languages": ["en", "ne"],
             "categories": ["AI and automation", "Technology trends"],
+            "default_content_length": "detailed",
+            "brand_profile": {
+                "company_name": "PyLoom Technologies Pvt. Ltd.",
+                "products": [
+                    {
+                        "name": "PyLoom AI HMS",
+                        "description": "A verified hospital management product description.",
+                        "approved_features": ["Appointment scheduling"],
+                    }
+                ],
+            },
         },
     )
     assert updated.status_code == 200
@@ -115,15 +264,30 @@ def test_content_settings_are_persisted_and_auto_publish_is_forced_off(client):
     assert updated.json()["generation_time"] == "10:30"
     assert updated.json()["posts_per_cycle"] == 2
     assert updated.json()["auto_publish_enabled"] is False
+    assert updated.json()["default_content_length"] == "detailed"
+    assert updated.json()["brand_profile"]["products"][0]["approved_features"] == [
+        "Appointment scheduling"
+    ]
 
 
 def test_draft_edit_regenerate_approve_reject_and_history(client, monkeypatch):
     from app.services.gemini_service import gemini_service
+    from app.services.media_generation import media_generation_service
 
     async def generate_post(**kwargs):
-        return {"message": "A new accurate PyLoom caption. #Technology", "media_url": None, "source": "gemini_api"}
+        return {
+            "message": "A new accurate PyLoom caption. #Technology",
+            "image_brief": "Professional business technology visual",
+            "missing_facts": [],
+            "media_url": None,
+            "source": "gemini_api",
+        }
+
+    async def generate_image(prompt):
+        return {"media_url": "/media/generated/test-image.png", "mime_type": "image/png"}
 
     monkeypatch.setattr(gemini_service, "generate_social_post", generate_post)
+    monkeypatch.setattr(media_generation_service, "generate_image", generate_image)
     _login_as_admin(client)
     created = _generate(client, request_id="workflow-request")
     assert created.status_code == 200
@@ -303,6 +467,7 @@ def test_generation_never_publishes_even_if_legacy_auto_publish_flags_are_true(m
                 language="en",
                 auto_publish=True,
                 allow_auto_publish=True,
+                include_image=False,
             )
             assert post.status == "draft"
 

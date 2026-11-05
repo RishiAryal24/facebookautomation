@@ -18,9 +18,15 @@ class MockAsyncClient:
     async def __aexit__(self, exc_type, exc_value, traceback):
         return False
 
-    async def request(self, method, url, *, params=None, data=None):
+    async def request(self, method, url, *, params=None, data=None, files=None):
         self.requests.append(
-            {"method": method, "url": url, "params": params, "data": data}
+            {
+                "method": method,
+                "url": url,
+                "params": params,
+                "data": data,
+                "files": files,
+            }
         )
         return self.responses.pop(0)
 
@@ -575,3 +581,49 @@ def test_post_id_is_not_confirmed_if_meta_does_not_verify_publication(monkeypatc
 
     assert exc_info.value.publication_uncertain is True
     assert exc_info.value.published_post_id == "123456789_987654321"
+
+
+def test_local_media_asset_is_uploaded_as_a_facebook_photo(monkeypatch, tmp_path):
+    from app.config import settings
+    from app.services import meta_client as meta_client_module
+    from app.services.media_generation import media_generation_service
+    from app.services.meta_client import MetaGraphClient
+
+    requests = []
+    responses = [
+        _response(200, {"id": "photo-id", "post_id": "123456789_987654321"}),
+        _response(
+            200,
+            {
+                "id": "123456789_987654321",
+                "is_published": True,
+                "permalink_url": "https://facebook.com/123456789/posts/987654321",
+            },
+        ),
+    ]
+    monkeypatch.setattr(settings, "SIMULATION_MODE", False)
+    monkeypatch.setattr(settings, "MEDIA_STORAGE_DIR", tmp_path)
+    monkeypatch.setattr(
+        meta_client_module.httpx,
+        "AsyncClient",
+        lambda **kwargs: MockAsyncClient(responses, requests, **kwargs),
+    )
+    media = media_generation_service.save_uploaded_image(
+        b"\x89PNG\r\n\x1a\nactual-test-image",
+        "image/png",
+    )
+
+    async def publish():
+        return await MetaGraphClient().create_page_post(
+            page_id="123456789",
+            message="Reviewed post with an uploaded visual",
+            access_token="synthetic-page-token",
+            media_url=media["media_url"],
+        )
+
+    result = asyncio.run(publish())
+    assert result["verified"] is True
+    assert result["id"] == "123456789_987654321"
+    assert requests[0]["url"].endswith("/123456789/photos")
+    assert requests[0]["files"]["source"][0].endswith(".png")
+    assert requests[0]["files"]["source"][1].startswith(b"\x89PNG\r\n\x1a\n")

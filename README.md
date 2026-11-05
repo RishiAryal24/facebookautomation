@@ -23,6 +23,8 @@ A Facebook Page engagement prototype, being hardened against the requirements in
 - **Operating Hours Scheduler:** Restricts automated replies to business hours (e.g., 08:00 AM – 10:00 PM NPT).
 - **Scheduled content generation:** Daily, Page-local IANA timezone schedules create drafts only. Persisted generation runs prevent duplicate jobs across restarts; scheduled publication times are planning metadata and never trigger Facebook requests.
 - **Verified manual Page publishing:** Content must first be approved, simulation mode must be off, and the administrator must explicitly confirm. The backend sends an explicit `published=true` request, records Meta's HTTP result and sanitized response details, then verifies the returned post ID and `is_published` state before recording success. Scheduled content is never published automatically in this development phase.
+- **Facebook + Instagram publishing:** Approved drafts can be published to either or both platforms. Independent publication statuses prevent confirmed platforms from being submitted again during retries. Instagram requires a linked Professional account and an image at a public HTTPS URL. Publication can be verified by permalink, but Meta's distribution algorithm does not guarantee that any particular audience will see it.
+- **Instagram comment support:** Signed Instagram comment webhooks and on-demand comment retrieval feed the same supervised or safety-gated reply workflow used for Facebook. Instagram comments are never auto-liked.
 - **Rate-Limiting:** Protects Page health by capping actions (e.g., maximum 30 replies/hour).
 - **Emergency Kill Switch:** Single-click global emergency halt to pause all automations instantly.
 - **AES-128 Fernet Encryption:** Secures Meta Page access tokens at rest.
@@ -37,17 +39,63 @@ A Facebook Page engagement prototype, being hardened against the requirements in
 
 The **AI Content** dashboard configures daily Gemini draft generation per Page
 (defaults: 09:00 Asia/Kathmandu, one post, English/Nepali, professional and
-engaging tone, rotating categories, administrator approval required). Use
-**Generate Now** for an immediate draft. Captions and content versions, job
-results/errors, approvals, rejections, and scheduled times are stored in the
-database. Regeneration updates a draft only after Gemini returns validated
-content; failures preserve the previous draft.
+engaging tone, rotating categories, standard 120–200 word captions, administrator
+approval required). Short, detailed, and storytelling lengths are also available.
+The structured brand profile stores verified company/product facts, allowed
+claims, and restricted claims. Product features are not inferred: if a product
+description or approved features are missing, the draft is flagged for review.
+Past Page captions are supplied as anti-repetition context.
+
+Draft generation uses Gemini for a topic-specific caption and visual brief. By
+default it queues an image-generation job with Gemini Nano Banana
+(`GEMINI_IMAGE_MODEL=gemini-nano-banana-2.1`; see
+[Google's image generation guide](https://ai.google.dev/gemini-api/docs/image-generation)).
+A failed image job is visibly marked while the caption remains available.
+Administrators can instead generate a text-only draft and upload an approved PNG
+or JPEG (up to 10 MB). Images are optional: approved text-only drafts can be
+published to the Page feed, while drafts with images upload the selected image
+through Meta's Page photo endpoint. Generated/uploaded visuals are stored under
+`backend/media/`, served from `/media/`, and excluded from version control.
+Publishing still requires approval, explicit confirmation, and a valid Page.
+
+Use **Generate Now** for an immediate draft. Captions, background media-job status, fact
+check warnings, content versions, job results/errors, approvals, rejections, and
+scheduled times are stored in the database. Caption generation returns without
+waiting for image generation; a persisted scheduler worker attaches the image
+later, and failures preserve the usable caption.
+If the primary text model is temporarily overloaded, generation automatically
+tries the configured stable Flash-Lite fallback once; model IDs and sanitized
+provider errors are logged for diagnosis.
 
 Relevant API operations are under `/api/v1/posts`: `GET/PUT
 /automation-config`, `POST /generate-draft`, `POST /{id}/regenerate`,
 `PUT /{id}/draft`, `POST /{id}/approve`, `POST /{id}/reject`,
 `GET /scheduled`, `POST/DELETE /{id}/schedule`, and `GET /history`.
+Administrator-selected media is uploaded through `POST /media/upload`.
 Automatic content publishing is forced off; scheduling is not publishing.
+Manual cross-posting uses `POST /{id}/publish` with an explicit `platforms`
+list; Instagram account discovery is `POST /pages/{id}/instagram/discover`.
+Comment retrieval is `POST /comments/sync-post/{post_id}`.
+
+### Instagram setup and publishing
+
+Connect a Facebook Page linked to an Instagram Business or Creator account,
+then select **Connect Instagram** on that Page to discover the account. The
+Meta app and token need the Instagram permissions for the chosen features,
+including `instagram_basic`, `instagram_content_publish`, and
+`instagram_manage_comments`, along with the required Page permissions.
+Configure `MEDIA_PUBLIC_BASE_URL=https://your-public-host` so Meta can retrieve
+local generated or uploaded images at `https://your-public-host/media/...`;
+localhost is not reachable by Meta. Local PNG images are converted to JPEG
+because Instagram image publishing requires JPEG.
+
+For comment monitoring, configure the Instagram Webhooks product in the Meta App
+Dashboard, verify the HTTPS callback at `/api/v1/webhook/`, and subscribe to the
+`comments` field. The app must be Live and have the necessary production access
+for webhook delivery. Real comments can also be retrieved for a post using
+**Sync comments** in Post Monitor. After a partial cross-post, only platforms
+that did not confirm success should be retried; uncertain outcomes require
+manual verification to prevent duplicates.
 
 ---
 
@@ -135,7 +183,9 @@ INITIAL_ADMIN_PASSWORD=replace_with_a_unique_password
 
 # Google Gemini API Key
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
+GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite
+GEMINI_IMAGE_MODEL=gemini-nano-banana-2.1
 ENABLE_LOCAL_AI_FALLBACK=false
 
 # Meta / Facebook Graph API Credentials
