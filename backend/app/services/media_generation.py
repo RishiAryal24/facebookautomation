@@ -283,3 +283,7 @@ class MediaGenerationService:
             return False
         candidate.unlink()
         return True
+
+
+media_generation_service = MediaGenerationService()
+
