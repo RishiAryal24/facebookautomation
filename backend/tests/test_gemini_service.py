@@ -4,6 +4,7 @@ import logging
 from types import SimpleNamespace
 
 import pytest
+import httpx
 from google.genai.errors import APIError
 
 from app.config import settings
@@ -210,6 +211,53 @@ def test_social_post_retries_fallback_once_then_succeeds(monkeypatch):
     ]
 
 
+def test_social_post_fails_over_after_network_timeout():
+    service = GeminiService()
+    model_names = []
+    caption = " ".join(f"detail{index}" for index in range(120))
+
+    class Models:
+        async def generate_content(self, *, model, **kwargs):
+            model_names.append(model)
+            if model == service.model_name:
+                raise httpx.ReadTimeout("provider response timed out")
+            return SimpleNamespace(
+                text=json.dumps(
+                    {
+                        "caption": caption,
+                        "image_brief": "A clean editorial image about the selected topic.",
+                        "missing_facts": [],
+                        "structure": "educational",
+                    }
+                )
+            )
+
+    service._client = SimpleNamespace(aio=SimpleNamespace(models=Models()))
+    result = asyncio.run(service.generate_social_post(topic="Business reporting", language="en"))
+
+    assert result["source"] == "gemini_api"
+    assert model_names == [service.model_name, service.fallback_model_name]
+
+
+def test_gemini_client_uses_bounded_http_timeout(monkeypatch):
+    from google import genai
+
+    from app.services.gemini_service import GEMINI_REQUEST_TIMEOUT_MS
+
+    received = {}
+
+    def create_client(**kwargs):
+        received.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "synthetic-timeout-test-key")
+    monkeypatch.setattr(genai, "Client", create_client)
+    service = GeminiService()
+
+    assert service._client is not None
+    assert received["http_options"].timeout == GEMINI_REQUEST_TIMEOUT_MS
+
+
 def test_social_post_obeys_standard_length_and_uses_verified_product_context(monkeypatch):
     service = GeminiService()
     calls = []
@@ -283,3 +331,38 @@ def test_social_post_retries_caption_outside_selected_word_range():
 
     assert len(calls) == 2
     assert 60 <= service._word_count(result["message"]) <= 100
+    assert "Previous caption to revise:" in calls[1]["contents"]
+    assert "Too short." in calls[1]["contents"]
+    assert "72-88 words" in calls[1]["contents"]
+
+
+def test_social_post_retries_overlong_caption_with_a_tighter_target():
+    service = GeminiService()
+    calls = []
+    captions = [
+        " ".join(f"detail{index}" for index in range(250)),
+        " ".join(f"detail{index}" for index in range(160)),
+    ]
+
+    class Models:
+        async def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                text=json.dumps(
+                    {
+                        "caption": captions[len(calls) - 1],
+                        "image_brief": "A clean editorial image about the selected topic.",
+                        "missing_facts": [],
+                        "structure": "educational",
+                    }
+                )
+            )
+
+    service._client = SimpleNamespace(aio=SimpleNamespace(models=Models()))
+    result = asyncio.run(
+        service.generate_social_post(topic="Business reporting", language="en")
+    )
+
+    assert service._word_count(result["message"]) == 160
+    assert "152-168 words" in calls[1]["contents"]
+    assert "detail249" in calls[1]["contents"]

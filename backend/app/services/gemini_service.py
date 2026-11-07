@@ -2,9 +2,12 @@ import asyncio
 import json
 import logging
 import re
+import time
 from difflib import SequenceMatcher
 from typing import Any, Callable, Dict, List, Optional
 
+import httpx
+from google.genai import types
 from google.genai.errors import APIError
 
 from app.config import settings
@@ -12,6 +15,7 @@ from app.services.brand_knowledge import build_brand_profile, find_relevant_prod
 
 
 logger = logging.getLogger(__name__)
+GEMINI_REQUEST_TIMEOUT_MS = 120_000
 
 
 BILINGUAL_SYSTEM_PROMPT = """
@@ -63,23 +67,29 @@ class GeminiService:
         if self.api_key:
             from google import genai
 
-            self._client = genai.Client(api_key=self.api_key)
+            self._client = genai.Client(
+                api_key=self.api_key,
+                http_options=types.HttpOptions(timeout=GEMINI_REQUEST_TIMEOUT_MS),
+            )
 
     def _log_api_error(
         self,
         operation: str,
-        error: APIError,
+        error: Exception,
         model_name: Optional[str] = None,
+        duration_seconds: Optional[float] = None,
     ) -> None:
         message = str(getattr(error, "message", "") or error)
         if self.api_key:
             message = message.replace(self.api_key, "[redacted]")
         logger.warning(
-            "Gemini %s failed: model=%s code=%s status=%s message=%s",
+            "Gemini %s failed: model=%s code=%s status=%s error_type=%s duration_seconds=%s message=%s",
             operation,
             model_name or self.model_name,
             getattr(error, "code", None),
             getattr(error, "status", None),
+            type(error).__name__,
+            f"{duration_seconds:.2f}" if duration_seconds is not None else "unknown",
             message[:500],
         )
 
@@ -104,7 +114,8 @@ class GeminiService:
             model_attempts = 2 if index > 0 else 1
             for attempt in range(model_attempts):
                 try:
-                    return await self._client.aio.models.generate_content(
+                    started_at = time.monotonic()
+                    response = await self._client.aio.models.generate_content(
                         model=model_name,
                         contents=contents,
                         config={
@@ -112,9 +123,26 @@ class GeminiService:
                             "response_mime_type": "application/json",
                         },
                     )
-                except APIError as exc:
-                    self._log_api_error(operation, exc, model_name)
-                    if not self._is_transient_api_error(exc):
+                    logger.info(
+                        "Gemini %s succeeded: model=%s duration_seconds=%.2f",
+                        operation,
+                        model_name,
+                        time.monotonic() - started_at,
+                    )
+                    return response
+                except (APIError, httpx.HTTPError) as exc:
+                    self._log_api_error(
+                        operation,
+                        exc,
+                        model_name,
+                        time.monotonic() - started_at,
+                    )
+                    transient = (
+                        self._is_transient_api_error(exc)
+                        if isinstance(exc, APIError)
+                        else isinstance(exc, (httpx.TimeoutException, httpx.TransportError))
+                    )
+                    if not transient:
                         raise GeminiServiceError("Gemini request failed") from exc
                     if attempt + 1 < model_attempts:
                         logger.info(
@@ -436,11 +464,20 @@ Return JSON with:
                         }
             if attempt == 1:
                 raise GeminiServiceError(last_error)
+            target_minimum = max(word_minimum, (word_minimum + word_maximum) // 2 - 8)
+            target_maximum = min(word_maximum, (word_minimum + word_maximum) // 2 + 8)
+            previous_caption = (
+                f"\nPrevious caption to revise:\n{message.strip()[:3000]}"
+                if isinstance(message, str) and message.strip()
+                else ""
+            )
             request_prompt = (
                 prompt
-                + f"\nRevise the prior result. Correction required: {last_error}. "
-                f"Return a {content_length} caption within {word_minimum}-{word_maximum} words "
-                "and all required JSON fields."
+                + f"\nThe previous response failed validation: {last_error}. "
+                f"Rewrite the previous caption to {target_minimum}-{target_maximum} words "
+                f"(the allowed range is {word_minimum}-{word_maximum}). Count the words "
+                "before returning the required JSON fields."
+                + previous_caption
             )
         raise GeminiServiceError(last_error)
 

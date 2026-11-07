@@ -134,8 +134,7 @@ async def update_content_automation_config(
         if field == "brand_profile":
             value = build_brand_profile(value)
         setattr(config, field, value)
-    config.approval_required = True
-    config.auto_publish_enabled = False
+    config.auto_publish_enabled = not config.approval_required
     await db.commit()
     await db.refresh(config)
     return config

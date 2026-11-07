@@ -56,7 +56,11 @@ or JPEG (up to 10 MB). Images are optional: approved text-only drafts can be
 published to the Page feed, while drafts with images upload the selected image
 through Meta's Page photo endpoint. Generated/uploaded visuals are stored under
 `backend/media/`, served from `/media/`, and excluded from version control.
-Publishing still requires approval, explicit confirmation, and a valid Page.
+Administrator approval is enabled by default. If approval is disabled in the
+content automation settings, daily scheduled posts are automatically approved
+and published to Facebook only while simulation mode is off and the connected
+Page has a valid publishing token. Instagram remains a separately selected
+publishing action. Manual publishing requires explicit confirmation.
 
 Use **Generate Now** for an immediate draft. Captions, background media-job status, fact
 check warnings, content versions, job results/errors, approvals, rejections, and
@@ -72,7 +76,11 @@ Relevant API operations are under `/api/v1/posts`: `GET/PUT
 `PUT /{id}/draft`, `POST /{id}/approve`, `POST /{id}/reject`,
 `GET /scheduled`, `POST/DELETE /{id}/schedule`, and `GET /history`.
 Administrator-selected media is uploaded through `POST /media/upload`.
-Automatic content publishing is forced off; scheduling is not publishing.
+Scheduled generation follows the configured daily time and timezone. With
+administrator approval enabled it creates drafts; with approval disabled it
+publishes verified generated content to Facebook, subject to the live-mode and
+Page-token safety checks. Provider requests have a bounded timeout, and stale
+or transiently failed daily jobs are retried a limited number of times.
 Manual cross-posting uses `POST /{id}/publish` with an explicit `platforms`
 list; Instagram account discovery is `POST /pages/{id}/instagram/discover`.
 Comment retrieval is `POST /comments/sync-post/{post_id}`.

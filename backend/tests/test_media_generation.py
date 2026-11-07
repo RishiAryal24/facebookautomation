@@ -6,6 +6,7 @@ import pytest
 
 from app.config import settings
 from app.services.media_generation import (
+    GEMINI_IMAGE_REQUEST_TIMEOUT_MS,
     MediaGenerationError,
     MediaGenerationService,
 )
@@ -34,6 +35,23 @@ def test_generated_image_is_saved_as_real_local_asset(monkeypatch, tmp_path):
     assert media["mime_type"] == "image/png"
     assert asset is not None
     assert asset[0].read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_image_generation_client_uses_bounded_http_timeout(monkeypatch):
+    from google import genai
+
+    received = {}
+
+    def create_client(**kwargs):
+        received.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "synthetic-image-timeout-test-key")
+    monkeypatch.setattr(genai, "Client", create_client)
+    service = MediaGenerationService()
+
+    assert service._client_for_generation() is not None
+    assert received["http_options"].timeout == GEMINI_IMAGE_REQUEST_TIMEOUT_MS
 
 
 @pytest.mark.parametrize(

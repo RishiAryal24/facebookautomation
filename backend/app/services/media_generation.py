@@ -3,19 +3,24 @@ import base64
 import binascii
 import io
 import httpx
+import logging
 import mimetypes
+import time
 import uuid
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlsplit
 
 from PIL import Image
+from google.genai import types
 from google.genai.errors import APIError
 
 from app.config import settings
 
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+GEMINI_IMAGE_REQUEST_TIMEOUT_MS = 180_000
+logger = logging.getLogger(__name__)
 ALLOWED_IMAGE_TYPES = {
     "image/jpeg": (".jpg", b"\xff\xd8\xff"),
     "image/png": (".png", b"\x89PNG\r\n\x1a\n"),
@@ -38,10 +43,14 @@ class MediaGenerationService:
         if self._client is None:
             from google import genai
 
-            self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            self._client = genai.Client(
+                api_key=settings.GEMINI_API_KEY,
+                http_options=types.HttpOptions(timeout=GEMINI_IMAGE_REQUEST_TIMEOUT_MS),
+            )
         return self._client
 
     async def generate_image(self, prompt: str) -> Dict[str, str]:
+        started_at = time.monotonic()
         try:
             response = await asyncio.to_thread(
                 self._client_for_generation().interactions.create,
@@ -51,6 +60,12 @@ class MediaGenerationService:
         except MediaGenerationError:
             raise
         except (APIError, httpx.HTTPError) as exc:
+            logger.warning(
+                "Gemini image generation failed: model=%s duration_seconds=%.2f error_type=%s",
+                settings.GEMINI_IMAGE_MODEL,
+                time.monotonic() - started_at,
+                type(exc).__name__,
+            )
             raise MediaGenerationError("The configured image-generation provider failed") from exc
 
         image = getattr(response, "output_image", None)
@@ -68,6 +83,11 @@ class MediaGenerationService:
             or not image_bytes.startswith(image_signature[1])
         ):
             raise MediaGenerationError("The image provider returned no supported image asset")
+        logger.info(
+            "Gemini image generation succeeded: model=%s duration_seconds=%.2f",
+            settings.GEMINI_IMAGE_MODEL,
+            time.monotonic() - started_at,
+        )
         return self._save_image(image_bytes, mime_type, "generated")
 
     def validate_upload(self, content: bytes, content_type: Optional[str]) -> str:

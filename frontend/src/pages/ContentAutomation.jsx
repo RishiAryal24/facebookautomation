@@ -143,6 +143,14 @@ export default function ContentAutomation({ simulationMode = true }) {
 
   const saveConfig = (event) => {
     event.preventDefault();
+    if (
+      configForm.approval_required === false
+      && !window.confirm(
+        'Administrator approval is off. Scheduled posts will be published automatically to Facebook when live publishing is available. Continue?',
+      )
+    ) {
+      return;
+    }
     let brandProfile;
     try {
       brandProfile = JSON.parse(configForm.brand_profile_text);
@@ -612,7 +620,11 @@ export default function ContentAutomation({ simulationMode = true }) {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">AI Content Automation</h1>
-          <p className="mt-1 text-sm text-slate-500">Gemini-generated drafts require administrator review. Scheduling never publishes automatically.</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {configForm?.approval_required
+              ? 'Scheduled content is saved as drafts for administrator review.'
+              : 'Scheduled content is automatically published to Facebook after generation.'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <label htmlFor="content-page" className="text-xs font-semibold text-slate-600">Facebook Page</label>
@@ -691,7 +703,7 @@ export default function ContentAutomation({ simulationMode = true }) {
 
               <form onSubmit={saveConfig} className="rounded-2xl border bg-white p-5 shadow-sm space-y-4">
                 <div className="flex items-center gap-2"><Settings2 className="h-5 w-5 text-slate-600" /><h2 className="font-bold">Content automation settings</h2></div>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={configForm.enabled} onChange={(event) => setConfigForm({ ...configForm, enabled: event.target.checked })} /> Enable scheduled draft generation</label>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={configForm.enabled} onChange={(event) => setConfigForm({ ...configForm, enabled: event.target.checked })} /> Enable scheduled generation</label>
                 <div className="grid grid-cols-2 gap-3">
                   <label className="text-xs font-semibold text-slate-600">Frequency
                     <select value={configForm.frequency} onChange={(event) => setConfigForm({ ...configForm, frequency: event.target.value })} className="mt-1 w-full rounded-lg border bg-white p-2 text-sm"><option value="daily">Daily</option></select>
@@ -750,8 +762,23 @@ export default function ContentAutomation({ simulationMode = true }) {
                   <textarea rows={14} value={configForm.brand_profile_text} onChange={(event) => setConfigForm({ ...configForm, brand_profile_text: event.target.value })} className="mt-1 w-full rounded-lg border p-2 font-mono text-xs" />
                   <span className="mt-1 block font-normal text-slate-500">Add only verified product descriptions and approved features. Empty product records are flagged for review.</span>
                 </label>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked disabled /> Administrator approval required</label>
-                <p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600">Approval is required and automatic Facebook publishing is fixed off for this development phase.</p>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={configForm.approval_required}
+                    onChange={(event) => setConfigForm({ ...configForm, approval_required: event.target.checked })}
+                  />
+                  Administrator approval required
+                </label>
+                {configForm.approval_required ? (
+                  <p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+                    Generated posts wait in the draft queue until an administrator approves them.
+                  </p>
+                ) : (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                    Scheduled posts will publish automatically to Facebook. This requires simulation mode to be off and a connected Page with a valid publishing token. Instagram publishing remains a separate, manually selected action.
+                  </p>
+                )}
                 <button disabled={working === 'config'} className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
                   {working === 'config' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save settings
                 </button>

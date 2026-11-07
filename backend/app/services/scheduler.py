@@ -3,7 +3,7 @@ from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from app.models.entities import (
     ContentGenerationRun,
     FacebookPage,
     Post,
+    PostContentVersion,
     ScheduledPostRun,
 )
 from app.services.brand_knowledge import build_brand_profile
@@ -28,6 +29,7 @@ from app.services.meta_ads_client import MetaAdsError
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone=timezone.utc)
+SCHEDULER_STARTED_AT = datetime.now(timezone.utc)
 RUN_STALE_AFTER = timedelta(minutes=30)
 RETRY_BASE_DELAY = timedelta(minutes=5)
 TOKEN_EXPIRING_SOON = timedelta(days=7)
@@ -150,6 +152,7 @@ async def _schedule_page_content(
         return
     if page.token_status == "simulated" or page.meta_page_id.startswith("pyloom_page_"):
         return
+    page_id = page.id
 
     languages = config.languages or ["en", "ne"]
     categories = config.categories or ["Company promotions"]
@@ -163,26 +166,64 @@ async def _schedule_page_content(
         )
         existing_run = existing_result.scalar_one_or_none()
         if existing_run:
-            continue
+            if existing_run.status in {"completed", "needs_review"}:
+                continue
+            last_attempt = _as_utc(existing_run.started_at)
+            if existing_run.status == "in_progress":
+                if (
+                    last_attempt >= SCHEDULER_STARTED_AT
+                    and now_utc - last_attempt < RUN_STALE_AFTER
+                ):
+                    continue
+                if existing_run.attempt_count >= settings.SCHEDULER_MAX_ATTEMPTS:
+                    existing_run.status = "failed"
+                    existing_run.error_message = (
+                        "Scheduled generation exceeded its retry limit after becoming stale."
+                    )
+                    existing_run.completed_at = _database_utc(now_utc)
+                    await db.commit()
+                    logger.error(
+                        "Scheduled generation exhausted retries for Page %s (%s)",
+                        page.id,
+                        run_key,
+                    )
+                    continue
+            elif existing_run.status == "failed":
+                retry_delay = RETRY_BASE_DELAY * existing_run.attempt_count
+                if now_utc - last_attempt < retry_delay:
+                    continue
+                if existing_run.attempt_count >= settings.SCHEDULER_MAX_ATTEMPTS:
+                    continue
+            else:
+                continue
 
-        category_index = (local_now.date().toordinal() + generation_index) % len(categories)
-        category = categories[category_index]
-        language = languages[(local_now.date().toordinal() + generation_index) % len(languages)]
-        run = ContentGenerationRun(
-            page_id=page.id,
-            run_key=run_key,
-            source="scheduled",
-            status="in_progress",
-            topic=category,
-            content_category=category,
-        )
-        db.add(run)
-        try:
+            existing_run.status = "in_progress"
+            existing_run.attempt_count += 1
+            existing_run.error_message = None
+            existing_run.started_at = _database_utc(now_utc)
+            existing_run.completed_at = None
+            run = existing_run
             await db.commit()
-        except IntegrityError:
-            await db.rollback()
-            continue
-        await db.refresh(run)
+            category = run.content_category or run.topic or categories[0]
+        else:
+            category_index = (local_now.date().toordinal() + generation_index) % len(categories)
+            category = categories[category_index]
+            run = ContentGenerationRun(
+                page_id=page.id,
+                run_key=run_key,
+                source="scheduled",
+                status="in_progress",
+                topic=category,
+                content_category=category,
+            )
+            db.add(run)
+            try:
+                await db.commit()
+            except IntegrityError:
+                await db.rollback()
+                continue
+            await db.refresh(run)
+        language = languages[(local_now.date().toordinal() + generation_index) % len(languages)]
 
         recent_result = await db.execute(
             select(Post.message)
@@ -196,7 +237,7 @@ async def _schedule_page_content(
         )
         recent_messages = [message for message in recent_result.scalars().all() if message]
         try:
-            await automation_engine.generate_daily_post(
+            post = await automation_engine.generate_daily_post(
                 db=db,
                 page=page,
                 topic=category,
@@ -213,6 +254,62 @@ async def _schedule_page_content(
                 brand_profile=build_brand_profile(config.brand_profile),
                 generation_run=run,
             )
+            if not config.approval_required:
+                if settings.SIMULATION_MODE or not page.is_connected or page.token_status != "valid":
+                    run.status = "needs_review"
+                    run.error_message = (
+                        "Automatic Facebook publishing requires simulation mode off, "
+                        "a connected Page, and a validated Page token. This draft needs review."
+                    )
+                    run.completed_at = _database_utc(datetime.now(timezone.utc))
+                    await db.commit()
+                    continue
+
+                post.page = page
+                post.status = "approved"
+                post.approved_at = datetime.now(timezone.utc)
+                post.approved_by_user_id = None
+                db.add(post)
+                version_result = await db.execute(
+                    select(func.max(PostContentVersion.version)).where(
+                        PostContentVersion.post_id == post.id
+                    )
+                )
+                db.add(
+                    PostContentVersion(
+                        post_id=post.id,
+                        version=(version_result.scalar() or 0) + 1,
+                        event_type="approved",
+                        message=post.message or "",
+                    )
+                )
+                await db.commit()
+                published = await automation_engine.publish_draft_post(db=db, post=post)
+                if not published:
+                    run.status = "failed"
+                    run.error_message = (
+                        "Automatic Facebook publishing failed. Review the Action Log before retrying."
+                    )
+                    run.completed_at = _database_utc(datetime.now(timezone.utc))
+                    await db.commit()
+                else:
+                    version_result = await db.execute(
+                        select(func.max(PostContentVersion.version)).where(
+                            PostContentVersion.post_id == post.id
+                        )
+                    )
+                    db.add(
+                        PostContentVersion(
+                            post_id=post.id,
+                            version=(version_result.scalar() or 0) + 1,
+                            event_type="published",
+                            message=post.message or "",
+                        )
+                    )
+                    run.status = "completed"
+                    run.error_message = None
+                    run.completed_at = _database_utc(datetime.now(timezone.utc))
+                    await db.commit()
         except (GeminiServiceError, MediaGenerationError, SQLAlchemyError, ValueError) as exc:
             run_id = run.id
             await db.rollback()
@@ -224,7 +321,7 @@ async def _schedule_page_content(
             run.completed_at = _database_utc(datetime.now(timezone.utc))
             db.add(
                 ActionLog(
-                    page_id=page.id,
+                    page_id=page_id,
                     action_type="scheduled_content_generation",
                     status=ActionStatus.FAILED,
                     error_message=str(exc),
@@ -232,24 +329,29 @@ async def _schedule_page_content(
                 )
             )
             await db.commit()
-            logger.warning("Scheduled content generation failed for Page %s: %s", page.id, exc)
+            logger.warning("Scheduled content generation failed for Page %s: %s", page_id, exc)
 
 
 async def check_and_create_daily_posts():
-    """Generate due drafts only; scheduled generation never publishes to Facebook."""
+    """Generate due posts and publish them when administrator approval is disabled."""
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(ContentGenerationConfig).where(ContentGenerationConfig.enabled.is_(True))
+            select(ContentGenerationConfig.id).where(ContentGenerationConfig.enabled.is_(True))
         )
+        config_ids = result.scalars().all()
         now_utc = datetime.now(timezone.utc)
-        for config in result.scalars().all():
+        for config_id in config_ids:
+            config = await db.get(ContentGenerationConfig, config_id)
+            if config is None:
+                continue
+            page_id = config.page_id
             try:
                 await _schedule_page_content(db, config, now_utc)
             except (SQLAlchemyError, ValueError, ZoneInfoNotFoundError):
                 await db.rollback()
                 logger.exception(
                     "Scheduler error while processing Page %s",
-                    config.page_id,
+                    page_id,
                 )
 
 async def check_daily_campaign_delivery():
@@ -344,10 +446,15 @@ async def process_pending_media_generation() -> int:
     completed = 0
     async with AsyncSessionLocal() as db:
         stale_before = _database_utc(datetime.now(timezone.utc) - timedelta(minutes=15))
+        scheduler_started_at = _database_utc(SCHEDULER_STARTED_AT)
         stale_result = await db.execute(
             select(Post).where(
                 Post.media_status == "in_progress",
-                Post.media_generation_started_at < stale_before,
+                or_(
+                    Post.media_generation_started_at.is_(None),
+                    Post.media_generation_started_at < stale_before,
+                    Post.media_generation_started_at < scheduler_started_at,
+                ),
             )
         )
         stale_posts = stale_result.scalars().all()
@@ -421,6 +528,7 @@ def start_scheduler():
         minutes=5,
         id="daily_post_checker",
         replace_existing=True,
+        next_run_time=datetime.now(timezone.utc),
         max_instances=1,
         coalesce=True,
         misfire_grace_time=300,

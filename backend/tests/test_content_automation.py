@@ -225,7 +225,7 @@ def test_requested_visual_failure_preserves_caption_as_a_text_only_draft(client,
     assert failed_draft["media_warning"] == "The configured image-generation provider failed"
 
 
-def test_content_settings_are_persisted_and_auto_publish_is_forced_off(client):
+def test_content_settings_persist_approval_and_auto_publish_modes(client):
     _login_as_admin(client)
     current = client.get("/api/v1/posts/automation-config", params={"page_id": 1})
     assert current.status_code == 200
@@ -268,6 +268,317 @@ def test_content_settings_are_persisted_and_auto_publish_is_forced_off(client):
     assert updated.json()["brand_profile"]["products"][0]["approved_features"] == [
         "Appointment scheduling"
     ]
+
+    auto_publish = client.put(
+        "/api/v1/posts/automation-config",
+        params={"page_id": 1},
+        json={"approval_required": False},
+    )
+    assert auto_publish.status_code == 200
+    assert auto_publish.json()["approval_required"] is False
+    assert auto_publish.json()["auto_publish_enabled"] is True
+    restored = client.put(
+        "/api/v1/posts/automation-config",
+        params={"page_id": 1},
+        json={"approval_required": True},
+    )
+    assert restored.status_code == 200
+
+
+def test_scheduled_generation_auto_publishes_to_facebook_when_approval_is_disabled(
+    monkeypatch,
+):
+    from app.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.models.entities import (
+        ContentGenerationConfig,
+        ContentGenerationRun,
+        FacebookPage,
+        Post,
+    )
+    from app.services.scheduler import _schedule_page_content
+    from sqlalchemy import select
+
+    calls = []
+
+    async def generate_post(**kwargs):
+        db = kwargs["db"]
+        run = kwargs["generation_run"]
+        post = Post(
+            meta_post_id=f"scheduled-test-{run.id}",
+            page_id=kwargs["page"].id,
+            message="Scheduled Facebook post for automatic publishing.",
+            is_ai_generated=True,
+            status="draft",
+        )
+        db.add(post)
+        await db.flush()
+        run.post_id = post.id
+        run.status = "completed"
+        run.completed_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(post)
+        return post
+
+    async def publish_post(*, db, post, **kwargs):
+        calls.append(post)
+        assert post.status == "approved"
+        assert post.approved_at is not None
+        post.status = "published"
+        post.facebook_status = "published"
+        post.published_at = datetime.now(timezone.utc)
+        await db.commit()
+        return True
+
+    monkeypatch.setattr(settings, "SIMULATION_MODE", False)
+    monkeypatch.setattr(
+        "app.services.scheduler.automation_engine.generate_daily_post",
+        generate_post,
+    )
+    monkeypatch.setattr(
+        "app.services.scheduler.automation_engine.publish_draft_post",
+        publish_post,
+    )
+
+    async def run_schedule():
+        async with AsyncSessionLocal() as db:
+            config = (
+                await db.execute(
+                    select(ContentGenerationConfig).where(
+                        ContentGenerationConfig.page_id == 1
+                    )
+                )
+            ).scalar_one()
+            page = (
+                await db.execute(select(FacebookPage).where(FacebookPage.id == 1))
+            ).scalar_one()
+            previous_page_state = (
+                page.token_status,
+                page.meta_page_id,
+                page.is_connected,
+            )
+            previous_config_state = (
+                config.approval_required,
+                config.enabled,
+                config.timezone,
+                config.generation_time,
+                config.posts_per_cycle,
+            )
+            page.token_status = "valid"
+            page.meta_page_id = "123456789012345"
+            page.is_connected = True
+            config.enabled = True
+            config.approval_required = False
+            config.timezone = "UTC"
+            config.generation_time = "00:00"
+            config.posts_per_cycle = 1
+            await db.commit()
+
+            now = datetime.now(timezone.utc) + timedelta(days=400)
+            run_key = f"daily:{now.date().isoformat()}:0"
+            await _schedule_page_content(db, config, now)
+            run = (
+                await db.execute(
+                    select(ContentGenerationRun).where(
+                        ContentGenerationRun.page_id == 1,
+                        ContentGenerationRun.run_key == run_key,
+                    )
+                )
+            ).scalar_one()
+            post = await db.get(Post, run.post_id)
+            assert run.status == "completed"
+            assert post.status == "published"
+            assert post.facebook_status == "published"
+            assert post.approved_by_user_id is None
+
+            page.token_status, page.meta_page_id, page.is_connected = previous_page_state
+            (
+                config.approval_required,
+                config.enabled,
+                config.timezone,
+                config.generation_time,
+                config.posts_per_cycle,
+            ) = previous_config_state
+            await db.delete(post)
+            await db.delete(run)
+            await db.commit()
+
+    asyncio.run(run_schedule())
+    assert len(calls) == 1
+
+
+def test_scheduled_run_retries_stale_generation(monkeypatch):
+    from app.core.database import AsyncSessionLocal
+    from app.models.entities import ContentGenerationConfig, ContentGenerationRun, FacebookPage
+    from app.services.scheduler import _schedule_page_content
+    from sqlalchemy import select
+
+    calls = []
+
+    async def generate_draft(**kwargs):
+        calls.append(kwargs)
+        run = kwargs["generation_run"]
+        run.status = "completed"
+        run.completed_at = datetime.now(timezone.utc)
+        await kwargs["db"].commit()
+
+    monkeypatch.setattr(
+        "app.services.scheduler.automation_engine.generate_daily_post",
+        generate_draft,
+    )
+
+    async def retry_stale():
+        async with AsyncSessionLocal() as db:
+            config = (
+                await db.execute(
+                    select(ContentGenerationConfig).where(
+                        ContentGenerationConfig.page_id == 1
+                    )
+                )
+            ).scalar_one()
+            page = (
+                await db.execute(select(FacebookPage).where(FacebookPage.id == 1))
+            ).scalar_one()
+            previous_page_state = (page.token_status, page.meta_page_id)
+            previous_config_state = (
+                config.approval_required,
+                config.enabled,
+                config.timezone,
+                config.generation_time,
+                config.posts_per_cycle,
+            )
+            page.token_status = "valid"
+            page.meta_page_id = "123456789012345"
+            config.enabled = True
+            config.approval_required = True
+            config.timezone = "UTC"
+            config.generation_time = "00:00"
+            config.posts_per_cycle = 1
+            now = datetime.now(timezone.utc) + timedelta(days=401)
+            run_key = f"daily:{now.date().isoformat()}:0"
+            run = ContentGenerationRun(
+                page_id=page.id,
+                run_key=run_key,
+                source="scheduled",
+                status="in_progress",
+                attempt_count=1,
+                topic="AI and automation",
+                content_category="AI and automation",
+                started_at=(now - timedelta(hours=1)).replace(tzinfo=None),
+            )
+            db.add(run)
+            await db.commit()
+
+            await _schedule_page_content(db, config, now)
+            await db.refresh(run)
+            assert run.status == "completed"
+            assert run.attempt_count == 2
+            page.token_status, page.meta_page_id = previous_page_state
+            (
+                config.approval_required,
+                config.enabled,
+                config.timezone,
+                config.generation_time,
+                config.posts_per_cycle,
+            ) = previous_config_state
+            await db.delete(run)
+            await db.commit()
+
+    asyncio.run(retry_stale())
+    assert len(calls) == 1
+
+
+def test_scheduled_generation_failure_is_recorded_and_retried(monkeypatch):
+    from app.core.database import AsyncSessionLocal
+    from app.models.entities import ContentGenerationConfig, ContentGenerationRun, FacebookPage
+    from app.services.gemini_service import GeminiServiceError
+    from app.services.scheduler import _schedule_page_content
+    from sqlalchemy import select
+
+    calls = []
+
+    async def generate_draft(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise GeminiServiceError("Provider temporarily unavailable")
+        run = kwargs["generation_run"]
+        run.status = "completed"
+        run.completed_at = datetime.now(timezone.utc)
+        await kwargs["db"].commit()
+
+    monkeypatch.setattr(
+        "app.services.scheduler.automation_engine.generate_daily_post",
+        generate_draft,
+    )
+
+    async def retry_failed_run():
+        async with AsyncSessionLocal() as db:
+            config = (
+                await db.execute(
+                    select(ContentGenerationConfig).where(
+                        ContentGenerationConfig.page_id == 1
+                    )
+                )
+            ).scalar_one()
+            page = (
+                await db.execute(select(FacebookPage).where(FacebookPage.id == 1))
+            ).scalar_one()
+            previous_page_state = (page.token_status, page.meta_page_id)
+            previous_config_state = (
+                config.approval_required,
+                config.enabled,
+                config.timezone,
+                config.generation_time,
+                config.posts_per_cycle,
+            )
+            page.token_status = "valid"
+            page.meta_page_id = "123456789012345"
+            config.approval_required = True
+            config.enabled = True
+            config.timezone = "UTC"
+            config.generation_time = "00:00"
+            config.posts_per_cycle = 1
+            now = datetime.now(timezone.utc) + timedelta(days=402)
+            run_key = f"daily:{now.date().isoformat()}:0"
+            page_id = page.id
+            config_id = config.id
+            await _schedule_page_content(db, config, now)
+            run = (
+                await db.execute(
+                    select(ContentGenerationRun).where(
+                        ContentGenerationRun.page_id == page_id,
+                        ContentGenerationRun.run_key == run_key,
+                    )
+                )
+            ).scalar_one()
+            assert run.status == "failed"
+            assert run.attempt_count == 1
+            run_id = run.id
+
+        async with AsyncSessionLocal() as db:
+            config = await db.get(ContentGenerationConfig, config_id)
+            page = await db.get(FacebookPage, page_id)
+            run = await db.get(ContentGenerationRun, run_id)
+            assert config is not None
+            assert page is not None
+            assert run is not None
+            await _schedule_page_content(db, config, now + timedelta(minutes=6))
+            await db.refresh(run)
+            assert run.status == "completed"
+            assert run.attempt_count == 2
+            page.token_status, page.meta_page_id = previous_page_state
+            (
+                config.approval_required,
+                config.enabled,
+                config.timezone,
+                config.generation_time,
+                config.posts_per_cycle,
+            ) = previous_config_state
+            await db.delete(run)
+            await db.commit()
+
+    asyncio.run(retry_failed_run())
+    assert len(calls) == 2
 
 
 def test_draft_edit_regenerate_approve_reject_and_history(client, monkeypatch):
@@ -411,7 +722,14 @@ def test_scheduled_generation_is_idempotent_and_draft_only(monkeypatch):
             previous_page_state = (page.token_status, page.meta_page_id)
             page.token_status = "valid"
             page.meta_page_id = "123456789012345"
+            previous_config_state = (
+                config.approval_required,
+                config.enabled,
+                config.generation_time,
+                config.timezone,
+            )
             config.enabled = True
+            config.approval_required = True
             config.frequency = "daily"
             config.generation_time = "09:00"
             config.timezone = "Asia/Kathmandu"
@@ -428,6 +746,12 @@ def test_scheduled_generation_is_idempotent_and_draft_only(monkeypatch):
             )
             assert result.scalar_one().status == "completed"
             page.token_status, page.meta_page_id = previous_page_state
+            (
+                config.approval_required,
+                config.enabled,
+                config.generation_time,
+                config.timezone,
+            ) = previous_config_state
             await db.commit()
 
     asyncio.run(check_twice())
