@@ -5,7 +5,7 @@ import api from '../api';
 const formatCurrency = (value, currency) =>
   new Intl.NumberFormat(undefined, {
     style: 'currency',
-    currency,
+    currency: currency || 'NPR',
     minimumFractionDigits: 2,
   }).format(Number(value || 0));
 
@@ -106,126 +106,127 @@ export default function AdsManager() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+      {/* Header */}
+      <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <Megaphone className="h-6 w-6 text-indigo-600" />
-            <h2 className="text-xl font-bold text-slate-900">Advertising & Delivery</h2>
-          </div>
-          <p className="mt-1 text-xs text-slate-500">
-            Authorized Ad Account campaign status, budgets, and daily delivery snapshots.
+          <h1 className="text-2xl font-bold tracking-tight text-[#141a2e]">Advertising &amp; Delivery</h1>
+          <p className="mt-0.5 text-sm text-[#5b6475]">
+            Authorized ad account campaign status, budgets and daily delivery snapshots.
           </p>
         </div>
         <button
           type="button"
           onClick={syncCampaigns}
           disabled={syncing || !account?.configured}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+          className="min-h-[40px] rounded-[10px] border border-[#d5d9e6] bg-white hover:bg-[#f4f5f9] px-4 text-xs font-semibold text-[#141a2e] flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
         >
-          <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
           {syncing ? 'Refreshing…' : 'Refresh delivery'}
         </button>
       </header>
 
       {error && (
-        <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+        <div role="alert" className="rounded-xl border border-[#e9b8b8] bg-[#fde4e4] p-3 text-sm text-[#a31f1f]">
           {error}
         </div>
       )}
 
-      {account && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase text-slate-500">Ad Account</p>
-              <h3 className="mt-1 font-bold text-slate-900">
-                {account.name || account.account_id || 'Not connected'}
-              </h3>
-              {account.account_id && (
-                <p className="mt-1 font-mono text-xs text-slate-500">{account.account_id}</p>
-              )}
+      <div className="grid gap-6 lg:grid-cols-2 items-start">
+        {/* Ad Account Card */}
+        {account && (
+          <section className="rounded-2xl border border-[#e4e7ef] bg-white p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-[#5b6475] uppercase tracking-wide">AD ACCOUNT</p>
+                <h2 className="mt-1 text-xl font-bold text-[#141a2e]">
+                  {account.name || account.account_id || 'Not connected'}
+                </h2>
+                {account.account_id && (
+                  <p className="mt-1 font-mono text-xs text-[#5b6475]">{account.account_id}</p>
+                )}
+              </div>
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                account.simulated
+                  ? 'bg-[#ffe9c7] text-[#7a3f00]'
+                  : account.connected
+                  ? 'bg-[#dff5ea] text-[#0b6b4a]'
+                  : 'bg-[#eceef5] text-[#3a4358]'
+              }`}>
+                {account.simulated ? 'Simulation only' : account.connected ? 'Connected' : 'Not configured'}
+              </span>
             </div>
-            <span className={`rounded-full px-3 py-1 text-xs font-bold ${
-              account.simulated
-                ? 'bg-amber-100 text-amber-800'
-                : account.connected
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : 'bg-slate-100 text-slate-700'
-            }`}>
-              {account.simulated ? 'Simulation only' : account.connected ? 'Connected' : 'Not configured'}
-            </span>
-          </div>
-          <p className="mt-3 text-xs text-slate-600">{account.message}</p>
-          <div className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-900">
-            <ShieldCheck className="h-4 w-4 shrink-0" />
-            Hard daily budget ceiling: {formatCurrency(account.max_daily_budget, account.currency)}
-          </div>
-        </section>
-      )}
+            <p className="text-xs text-[#5b6475] leading-relaxed">
+              Set <code className="bg-[#f4f5f9] px-1.5 py-0.5 rounded text-[#141a2e] font-mono">META_AD_ACCOUNT_ID</code> and <code className="bg-[#f4f5f9] px-1.5 py-0.5 rounded text-[#141a2e] font-mono">META_AD_ACCESS_TOKEN</code> on the backend using an authorized account. Never enter access tokens on this screen.
+            </p>
+            <div className="flex items-center gap-2 rounded-xl bg-[#dff5ea] border border-[#0b6b4a]/20 p-3 text-xs font-semibold text-[#0b6b4a]">
+              <ShieldCheck className="h-4 w-4 shrink-0" />
+              Hard daily budget ceiling: {formatCurrency(account.max_daily_budget, account.currency)}
+            </div>
+          </section>
+        )}
 
-      {!loading && account && !account.configured && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          Set <code>META_AD_ACCOUNT_ID</code> and <code>META_AD_ACCESS_TOKEN</code> on the backend
-          using an authorized account. Never enter access tokens in this screen.
-        </div>
-      )}
-
-      {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
-          Loading Ad Account…
-        </div>
-      ) : campaigns.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
-          <AlertTriangle className="mx-auto h-8 w-8 text-slate-400" />
-          <p className="mt-3 text-sm font-semibold text-slate-700">No campaign snapshots</p>
-          <p className="mt-1 text-xs text-slate-500">
-            Connect an Ad Account and refresh delivery to load campaigns.
-          </p>
-        </div>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {campaigns.map((campaign) => (
-            <article key={campaign.meta_campaign_id} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+        {/* Campaign Cards */}
+        {loading ? (
+          <div className="rounded-2xl border border-[#e4e7ef] bg-white p-12 text-center text-sm text-[#5b6475]">
+            Loading ad accounts and campaigns…
+          </div>
+        ) : campaigns.length === 0 ? (
+          <div className="rounded-2xl border border-[#e4e7ef] bg-white p-10 text-center space-y-2">
+            <AlertTriangle className="mx-auto h-8 w-8 text-[#5b6475]" />
+            <p className="text-sm font-semibold text-[#141a2e]">No campaign snapshots</p>
+            <p className="text-xs text-[#5b6475]">
+              Connect an ad account and refresh delivery to load campaigns.
+            </p>
+          </div>
+        ) : (
+          campaigns.map((campaign) => (
+            <article key={campaign.meta_campaign_id} className="rounded-2xl border border-[#e4e7ef] bg-white p-6 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-bold text-slate-900">{campaign.name}</h3>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {campaign.objective || 'Campaign'} · {campaign.meta_campaign_id}
+                  <h3 className="text-base font-bold text-[#141a2e]">{campaign.name}</h3>
+                  <p className="mt-0.5 font-mono text-xs text-[#5b6475]">
+                    {campaign.objective || 'OUTCOME_AWARENESS'} · {campaign.meta_campaign_id}
                   </p>
                 </div>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  campaign.status === 'ACTIVE'
+                    ? 'bg-[#dff5ea] text-[#0b6b4a]'
+                    : 'bg-[#eceef5] text-[#3a4358]'
+                }`}>
                   {campaign.effective_status || campaign.status}
                 </span>
               </div>
 
-              <dl className="grid grid-cols-2 gap-3 text-xs">
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <dt className="text-slate-500">Today’s spend</dt>
-                  <dd className="mt-1 font-bold text-slate-900">
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-xl bg-[#f4f5f9] p-3.5">
+                  <div className="text-[#5b6475]">Today’s spend</div>
+                  <div className="mt-1 font-bold text-lg text-[#141a2e]">
                     {formatCurrency(campaign.today_spend, campaign.currency)}
-                  </dd>
+                  </div>
                 </div>
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <dt className="text-slate-500">Daily budget</dt>
-                  <dd className="mt-1 font-bold text-slate-900">
+                <div className="rounded-xl bg-[#f4f5f9] p-3.5">
+                  <div className="text-[#5b6475]">Daily budget</div>
+                  <div className="mt-1 font-bold text-lg text-[#141a2e]">
                     {campaign.daily_budget == null
                       ? 'Not set'
                       : formatCurrency(campaign.daily_budget, campaign.currency)}
-                  </dd>
+                  </div>
                 </div>
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <dt className="text-slate-500">Impressions</dt>
-                  <dd className="mt-1 font-bold text-slate-900">{campaign.impressions}</dd>
+                <div className="rounded-xl bg-[#f4f5f9] p-3.5">
+                  <div className="text-[#5b6475]">Impressions</div>
+                  <div className="mt-1 font-bold text-lg text-[#141a2e]">{campaign.impressions}</div>
                 </div>
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <dt className="text-slate-500">Clicks</dt>
-                  <dd className="mt-1 font-bold text-slate-900">{campaign.clicks}</dd>
+                <div className="rounded-xl bg-[#f4f5f9] p-3.5">
+                  <div className="text-[#5b6475]">Clicks</div>
+                  <div className="mt-1 font-bold text-lg text-[#141a2e]">{campaign.clicks}</div>
                 </div>
-              </dl>
+              </div>
 
-              <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-4">
-                <label className="min-w-36 flex-1 text-xs font-semibold text-slate-600">
+              <div className="border-t border-[#eceef5] pt-4 space-y-2">
+                <label className="block text-xs font-semibold text-[#5b6475]">
                   Daily budget (NPR, max 5)
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="number"
                     min="0.01"
@@ -238,35 +239,38 @@ export default function AdsManager() {
                         [campaign.meta_campaign_id]: event.target.value,
                       }))
                     }
-                    className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"
+                    className="flex-1 min-w-[120px] rounded-[10px] border border-[#d5d9e6] bg-white p-2.5 text-sm text-[#141a2e] focus:outline-none focus:border-[#1b2140]"
                   />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => updateBudget(campaign)}
-                  disabled={busyCampaignId === campaign.meta_campaign_id}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-50"
-                >
-                  Save budget
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateStatus(campaign)}
-                  disabled={busyCampaignId === campaign.meta_campaign_id}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold text-white disabled:opacity-50 ${
-                    campaign.status === 'ACTIVE' ? 'bg-rose-600' : 'bg-emerald-600'
-                  }`}
-                >
-                  {campaign.status === 'ACTIVE' ? 'Pause' : 'Activate'}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => updateBudget(campaign)}
+                    disabled={busyCampaignId === campaign.meta_campaign_id}
+                    className="rounded-[10px] border border-[#d5d9e6] bg-white hover:bg-[#f4f5f9] px-3.5 py-2.5 text-xs font-semibold text-[#141a2e] disabled:opacity-50 cursor-pointer"
+                  >
+                    Save budget
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateStatus(campaign)}
+                    disabled={busyCampaignId === campaign.meta_campaign_id}
+                    className={`rounded-[10px] px-4 py-2.5 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer ${
+                      campaign.status === 'ACTIVE'
+                        ? 'border border-[#e9b8b8] bg-white text-[#a31f1f] hover:bg-[#fde4e4]'
+                        : 'bg-[#0b6b4a] hover:bg-[#09573c] text-white'
+                    }`}
+                  >
+                    {campaign.status === 'ACTIVE' ? 'Pause' : 'Activate'}
+                  </button>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-400">
+
+              <p className="text-[11px] text-[#5b6475]">
                 Last checked: {campaign.last_synced_at ? new Date(campaign.last_synced_at).toLocaleString() : 'Not synced'}
               </p>
             </article>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }

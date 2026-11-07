@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, RefreshCw, CheckCircle2, XCircle, Clock, Filter } from 'lucide-react';
+import { RefreshCw, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import api from '../api';
 
 export default function AuditLogs() {
@@ -26,91 +26,101 @@ export default function AuditLogs() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Audit Logs & Activity Reports</h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Historical audit trail of all automated actions, publishing events, and system errors (ANNEX A §2.7).
+          <h1 className="text-2xl font-bold tracking-tight text-[#141a2e]">
+            Audit Logs &amp; Activity Reports
+          </h1>
+          <p className="mt-0.5 text-sm text-[#5b6475]">
+            Historical trail of automated actions, publishing events and system errors (ANNEX A §2.7).
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-2.5">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-700"
+            className="min-h-[40px] rounded-[10px] border border-[#d5d9e6] bg-white px-3 text-xs font-semibold text-[#141a2e]"
           >
-            <option value="">All Statuses</option>
-            <option value="success">Success Only</option>
-            <option value="failed">Failed Only</option>
-            <option value="pending">Pending Only</option>
+            <option value="">All statuses</option>
+            <option value="success">Success only</option>
+            <option value="failed">Failed only</option>
+            <option value="pending">Pending only</option>
           </select>
 
           <button
             onClick={fetchLogs}
             disabled={loading}
-            className="px-3.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className="min-h-[40px] px-4 rounded-[10px] border border-[#d5d9e6] bg-white hover:bg-[#f4f5f9] text-[#141a2e] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
         </div>
-      </div>
+      </header>
 
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+      {/* Table Card */}
+      <div className="bg-white rounded-2xl border border-[#e4e7ef] p-4 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider border-b border-slate-200">
-              <tr>
-                <th className="p-3.5">Time</th>
-                <th className="p-3.5">Action Type</th>
-                <th className="p-3.5">Status</th>
-                <th className="p-3.5">Event Details</th>
-                <th className="p-3.5">Error / Note</th>
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="text-xs font-semibold text-[#5b6475] border-b border-[#eceef5]">
+                <th className="pb-3 px-3">Date / Time</th>
+                <th className="pb-3 px-3">Action</th>
+                <th className="pb-3 px-3">Status</th>
+                <th className="pb-3 px-3">Event details</th>
+                <th className="pb-3 px-3">Error / note</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[#eceef5]">
               {loading && logs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-400">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-600" />
+                  <td colSpan={5} className="py-12 text-center text-[#5b6475] text-xs">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#1b2140]" />
                     Loading action logs...
                   </td>
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-400">
+                  <td colSpan={5} className="py-12 text-center text-[#5b6475] text-xs">
                     No activity logs found for the selected filter.
                   </td>
                 </tr>
               ) : (
                 logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50/70">
-                    <td className="p-3.5 text-slate-500 whitespace-nowrap">
+                  <tr key={log.id} className="hover:bg-[#f4f5f9]/50">
+                    <td className="py-3 px-3 text-[#5b6475] text-xs whitespace-nowrap font-mono">
                       {new Date(log.created_at).toLocaleString()}
                     </td>
-                    <td className="p-3.5 font-bold text-slate-900 uppercase tracking-tight text-[11px]">
-                      {log.action_type.replace('_', ' ')}
+                    <td className="py-3 px-3 font-semibold text-[#141a2e] text-xs capitalize whitespace-nowrap">
+                      {log.action_type.replaceAll('_', ' ')}
                     </td>
-                    <td className="p-3.5">
-                      <span className={`px-2 py-0.5 rounded-full font-semibold text-[11px] inline-flex items-center gap-1 ${
-                        log.status === 'success'
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : log.status === 'failed'
-                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                          : 'bg-amber-50 text-amber-700 border border-amber-200'
-                      }`}>
-                        {log.status === 'success' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
-                        {log.status === 'failed' && <XCircle className="w-3 h-3 text-rose-600" />}
-                        {log.status === 'pending' && <Clock className="w-3 h-3 text-amber-600" />}
+                    <td className="py-3 px-3 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${
+                          log.status === 'success'
+                            ? 'bg-[#dff5ea] text-[#0b6b4a]'
+                            : log.status === 'failed'
+                            ? 'bg-[#fde4e4] text-[#a31f1f]'
+                            : 'bg-[#ffe9c7] text-[#7a3f00]'
+                        }`}
+                      >
+                        {log.status === 'success' && <CheckCircle2 className="w-3 h-3 text-[#0b6b4a]" />}
+                        {log.status === 'failed' && <XCircle className="w-3 h-3 text-[#a31f1f]" />}
+                        {log.status === 'pending' && <Clock className="w-3 h-3 text-[#7a3f00]" />}
                         {log.status}
                       </span>
                     </td>
-                    <td className="p-3.5 text-slate-700 max-w-md font-mono text-[11px] truncate">
+                    <td className="py-3 px-3 text-[#3a4358] max-w-md font-mono text-xs truncate">
                       {log.details ? JSON.stringify(log.details) : '—'}
                     </td>
-                    <td className="p-3.5 text-rose-600 text-[11px]">
-                      {log.error_message || '—'}
+                    <td className="py-3 px-3 text-xs max-w-xs truncate">
+                      {log.error_message ? (
+                        <span className="text-[#a31f1f]">{log.error_message}</span>
+                      ) : (
+                        <span className="text-[#5b6475]">—</span>
+                      )}
                     </td>
                   </tr>
                 ))

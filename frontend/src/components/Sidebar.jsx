@@ -1,25 +1,24 @@
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  Inbox, 
-  Globe2, 
-  Newspaper, 
-  Sliders, 
-  FileText, 
-  FlaskConical,
-  Megaphone,
+import {
+  LayoutDashboard,
+  CheckSquare,
+  Globe2,
+  Newspaper,
   Sparkles,
+  Megaphone,
+  Sliders,
+  FileText,
+  FlaskConical,
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, pendingCount = 0 }) {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { 
-      id: 'queue', 
-      label: 'Approval Queue', 
-      icon: Inbox, 
+    {
+      id: 'queue',
+      label: 'Approval Queue',
+      icon: CheckSquare,
       badge: pendingCount > 0 ? pendingCount : null,
-      badgeColor: 'bg-amber-500'
     },
     { id: 'pages', label: 'Connected Pages', icon: Globe2 },
     { id: 'posts', label: 'Posts & Feed', icon: Newspaper },
@@ -31,11 +30,20 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 0 }) {
   ];
 
   return (
-    <aside className="w-64 bg-white border-r border-slate-200 min-h-[calc(100vh-65px)] p-4 flex flex-col justify-between shrink-0">
-      <div className="space-y-1">
-        <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-          Navigation
+    <aside className="w-[236px] bg-white border-r border-[#e4e7ef] min-h-[calc(100vh-65px)] p-4 flex flex-col gap-1 shrink-0 select-none">
+      {/* Brand Header */}
+      <div className="flex items-center gap-2.5 px-1.5 pb-4.5 mb-1">
+        <div className="w-9 h-9 rounded-[10px] bg-[#1b2140] text-white grid place-items-center font-bold text-sm shrink-0 shadow-xs">
+          PL
         </div>
+        <div>
+          <div className="font-bold text-[15px] text-[#141a2e] leading-tight">PyLoom</div>
+          <div className="text-[12px] text-[#5b6475] leading-tight">Automation · v1.0 MoE</div>
+        </div>
+      </div>
+
+      {/* Nav List */}
+      <nav className="flex-1 flex flex-col gap-1" aria-label="Main Navigation">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -43,32 +51,38 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 0 }) {
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              className={`w-full flex items-center gap-2.5 px-3 min-h-[44px] rounded-[10px] text-sm font-medium transition-colors text-left ${
                 isActive
-                  ? 'bg-blue-50 text-blue-700 font-semibold shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  ? 'bg-[#1b2140] text-white font-semibold'
+                  : 'text-[#4a5365] hover:bg-[#eef0f6] hover:text-[#141a2e]'
               }`}
             >
-              <div className="flex items-center space-x-3">
-                <Icon className={`w-4 h-4 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
-                <span>{item.label}</span>
-              </div>
-              {item.badge && (
-                <span className={`px-2 py-0.5 rounded-full text-xs font-bold text-white ${item.badgeColor}`}>
+              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-[#5b6475]'}`} />
+              <span className="flex-1 truncate">{item.label}</span>
+              {item.badge !== null && item.badge !== undefined && (
+                <span
+                  className={`text-[12px] font-bold px-2 py-0.5 rounded-full ${
+                    isActive
+                      ? 'bg-[#ffb84d] text-[#2a1700]'
+                      : 'bg-[#ffe3b8] text-[#7a3f00]'
+                  }`}
+                >
                   {item.badge}
                 </span>
               )}
             </button>
           );
         })}
-      </div>
+      </nav>
 
-      <div className="pt-4 border-t border-slate-100">
-        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
-          <div className="font-semibold text-slate-700">Client Scope Status</div>
-          <div className="text-slate-500">ANNEX A & MoE Compliant</div>
-          <div className="text-[11px] text-blue-600 font-medium pt-1 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span> Policy Safe Rate-Limiter
+      {/* Client Scope Status Box */}
+      <div className="mt-4 pt-3 border-t border-[#eceef5]">
+        <div className="bg-[#f4f5f9] rounded-xl p-3.5 text-xs text-[#5b6475] leading-relaxed">
+          <div className="font-semibold text-[#141a2e] text-[13px] mb-0.5">Client scope</div>
+          <div>ANNEX A &amp; MoE compliant</div>
+          <div className="text-[#0b6b4a] font-semibold mt-1.5 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#12875f] animate-pulse"></span>
+            Rate limiter on
           </div>
         </div>
       </div>

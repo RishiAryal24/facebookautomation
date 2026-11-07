@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Newspaper, 
-  ThumbsUp, 
-  MessageSquare, 
-  ExternalLink, 
-  RefreshCw, 
-  Eye, 
-  EyeOff, 
-  Sparkles, 
-  Trash2, 
+import {
+  Newspaper,
+  ThumbsUp,
+  MessageSquare,
+  ExternalLink,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Sparkles,
+  Trash2,
   Edit3,
   Clock,
   ImagePlus,
@@ -188,61 +188,65 @@ export default function PostMonitor({ onNavigate }) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-2">
-            <h2 className="text-xl font-bold text-slate-900">Facebook Posts & Content Creator</h2>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200">
-              Daily Automation Engine
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Automated daily content generation, bilingual captions (नेपाली / EN), and live post engagement tracking.
+          <h1 className="text-2xl font-bold tracking-tight text-[#141a2e]">
+            Facebook Posts &amp; Content Creator
+          </h1>
+          <p className="mt-0.5 text-sm text-[#5b6475]">
+            Daily bilingual captions (<span className="font-devanagari">नेपाली</span> / EN) and live engagement tracking.
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={() => setShowGenerateModal(true)}
-            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+            className="min-h-[44px] bg-[#1b2140] hover:bg-[#28315c] text-white rounded-[10px] px-4.5 text-sm font-semibold transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
           >
-            <Sparkles className="w-4 h-4" />
-            <span>Generate Daily AI Post</span>
+            <Sparkles className="w-4 h-4 text-[#ffb84d]" />
+            <span>Generate daily AI post</span>
           </button>
 
           <button
             onClick={fetchPosts}
             disabled={loading}
-            className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className="min-h-[44px] px-4 rounded-[10px] border border-[#d5d9e6] bg-white hover:bg-[#f4f5f9] text-[#141a2e] text-sm font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
           </button>
         </div>
-      </div>
+      </header>
 
       {/* Tabs Filter */}
-      <div className="flex items-center space-x-2 border-b border-slate-200 pb-2 text-xs font-semibold">
+      <div className="flex flex-wrap gap-2 text-sm font-semibold">
         <button
           onClick={() => setActiveTab('all')}
-          className={`px-3 py-1.5 rounded-lg transition-colors ${
-            activeTab === 'all' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+          className={`min-h-[40px] px-4 rounded-full transition-colors cursor-pointer ${
+            activeTab === 'all'
+              ? 'bg-[#1b2140] text-white'
+              : 'bg-white border border-[#d5d9e6] text-[#3a4358] hover:bg-[#f4f5f9]'
           }`}
         >
-          All Posts ({posts.length})
+          All posts ({posts.length})
         </button>
         <button
           onClick={() => setActiveTab('drafts')}
-          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-            activeTab === 'drafts' ? 'bg-amber-500 text-white' : 'text-slate-600 hover:bg-slate-100'
+          className={`min-h-[40px] px-4 rounded-full transition-colors flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'drafts'
+              ? 'bg-[#1b2140] text-white'
+              : 'bg-white border border-[#d5d9e6] text-[#3a4358] hover:bg-[#f4f5f9]'
           }`}
         >
-          <Clock className="w-3 h-3" />
-          <span>AI Post Drafts ({draftCount})</span>
+          <Clock className="w-3.5 h-3.5" />
+          <span>AI post drafts ({draftCount})</span>
         </button>
         <button
           onClick={() => setActiveTab('published')}
-          className={`px-3 py-1.5 rounded-lg transition-colors ${
-            activeTab === 'published' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+          className={`min-h-[40px] px-4 rounded-full transition-colors cursor-pointer ${
+            activeTab === 'published'
+              ? 'bg-[#1b2140] text-white'
+              : 'bg-white border border-[#d5d9e6] text-[#3a4358] hover:bg-[#f4f5f9]'
           }`}
         >
           Published to Facebook ({publishedCount})
@@ -251,16 +255,16 @@ export default function PostMonitor({ onNavigate }) {
 
       {/* Posts Grid */}
       {loading && posts.length === 0 ? (
-        <div className="p-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
-          <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
+        <div className="p-16 text-center text-[#5b6475] bg-white rounded-2xl border border-[#e4e7ef]">
+          <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-[#1b2140]" />
           <p className="text-sm">Loading posts catalogue...</p>
         </div>
       ) : filteredPosts.length === 0 ? (
-        <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 space-y-3">
-          <Newspaper className="w-10 h-10 text-slate-400 mx-auto" />
-          <h3 className="font-bold text-slate-800">No Posts in this section</h3>
-          <p className="text-xs text-slate-500">
-            Click "Generate Daily AI Post" to create a new bilingual Facebook post draft.
+        <div className="p-16 text-center bg-white rounded-2xl border border-[#e4e7ef] space-y-3">
+          <Newspaper className="w-10 h-10 text-[#5b6475] mx-auto" />
+          <h3 className="font-bold text-[#141a2e]">No Posts in this section</h3>
+          <p className="text-xs text-[#5b6475]">
+            Click "Generate daily AI post" to create a new bilingual Facebook post draft.
           </p>
         </div>
       ) : (
@@ -271,82 +275,53 @@ export default function PostMonitor({ onNavigate }) {
             return (
               <div
                 key={post.id}
-                className={`bg-white rounded-2xl border overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col justify-between ${
-                  isDraft ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-200'
-                }`}
+                className="bg-white rounded-2xl border border-[#e4e7ef] overflow-hidden flex flex-col justify-between transition-shadow hover:shadow-xs"
               >
-                {post.is_simulated && (
-                  <div className="bg-amber-100 px-4 py-2 text-xs font-semibold text-amber-900">
-                    Simulation record — this post was not published to Facebook.
-                  </div>
-                )}
-                {post.status === 'pending_verification' && (
-                  <div className="bg-orange-100 px-4 py-2 text-xs font-semibold text-orange-900">
-                    Publication is unverified. Check the Facebook Page before retrying.
-                  </div>
-                )}
-                {post.status === 'failed' && (
-                  <div className="bg-rose-100 px-4 py-2 text-xs font-semibold text-rose-900">
-                    Facebook did not confirm this post. Review the Action Log.
-                  </div>
-                )}
-                {post.status === 'partially_published' && (
-                  <div className="bg-amber-100 px-4 py-2 text-xs font-semibold text-amber-900">
-                    Cross-posting is incomplete. Check each platform status in AI Content before retrying.
-                  </div>
-                )}
                 <div>
-                  {/* Status Banner for Draft */}
-                  {isDraft && (
-                    <div className="bg-amber-500 text-white px-4 py-1.5 text-[11px] font-bold flex items-center justify-between">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> Post Draft (Pending Review)
-                      </span>
-                      <span>{post.media_url ? 'Caption and image ready for review' : 'Caption ready — image optional'}</span>
-                    </div>
-                  )}
-                  {['queued', 'in_progress'].includes(post.media_status) && (
-                    <div className="px-4 py-2 text-xs text-indigo-800 bg-indigo-50" role="status">
-                      Image is generating in the background. You can review the caption now.
-                    </div>
-                  )}
-                  {post.media_status === 'failed' && (
-                    <div className="px-4 py-2 text-xs text-rose-800 bg-rose-50">
-                      Image generation failed. The caption remains available for review.
+                  {post.is_simulated && (
+                    <div className="bg-[#fff8eb] border-b border-[#ffe3b8] px-4 py-2 text-xs font-semibold text-[#7a3f00]">
+                      Simulation record — this post was not published to Facebook.
                     </div>
                   )}
 
-                  {post.media_url && (
-                    <div className="h-48 w-full bg-slate-100 overflow-hidden relative">
+                  {post.media_url ? (
+                    <div className="h-48 w-full bg-[#f4f5f9] overflow-hidden relative border-b border-[#e4e7ef]">
                       <img
                         src={mediaSource(post.media_url)}
                         alt="Post media"
                         className="w-full h-full object-cover"
                       />
                       {post.is_ai_generated && (
-                        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/70 text-white text-[10px] font-semibold backdrop-blur-xs flex items-center gap-1">
-                          <Sparkles className="w-3 h-3 text-amber-400" />
-                          {post.generation_source === 'local_fallback' ? 'Local template' : 'AI Created'}
+                        <span className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-[8px] bg-[#1b2140]/90 text-white text-[11px] font-semibold backdrop-blur-xs flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-[#ffb84d]" />
+                          {post.generation_source === 'local_fallback' ? 'Local template' : 'AI created'}
                         </span>
                       )}
+                    </div>
+                  ) : (
+                    <div className="h-28 bg-[#f4f5f9] border-b border-[#e4e7ef] flex items-center justify-center text-xs text-[#5b6475]">
+                      No image attached
                     </div>
                   )}
 
                   <div className="p-5 space-y-3">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span className="font-mono text-[10px]">ID: {post.meta_post_id}</span>
+                    <div className="flex items-center justify-between text-xs text-[#5b6475]">
+                      <span className="font-mono text-[11px] text-[#3a4358]">ID: {post.meta_post_id}</span>
                       <span>{new Date(post.created_at).toLocaleDateString()}</span>
                     </div>
+
                     {!isDraft && (
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-[#5b6475]">
                         Facebook: {post.facebook_status || 'not requested'} · Instagram: {post.instagram_status || 'not requested'}
-                        {post.instagram_permalink_url && <> · <a href={post.instagram_permalink_url} target="_blank" rel="noreferrer" className="text-pink-700 underline">Instagram post</a></>}
+                        {post.instagram_permalink_url && (
+                          <> · <a href={post.instagram_permalink_url} target="_blank" rel="noreferrer" className="text-[#2f3fb8] hover:underline">Instagram post</a></>
+                        )}
                       </p>
                     )}
 
                     {isDraft && editingDraftId === post.id ? (
-                      <div className="space-y-2">
-                        <label className="block text-xs font-semibold text-slate-600" htmlFor={`draft-message-${post.id}`}>
+                      <div className="space-y-2.5">
+                        <label className="block text-xs font-semibold text-[#5b6475]" htmlFor={`draft-message-${post.id}`}>
                           Draft caption
                         </label>
                         <textarea
@@ -354,11 +329,11 @@ export default function PostMonitor({ onNavigate }) {
                           rows={6}
                           value={draftMessage}
                           onChange={(event) => setDraftMessage(event.target.value)}
-                          className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-800"
+                          className="w-full rounded-[10px] border border-[#d5d9e6] bg-white p-3 text-sm text-[#141a2e] focus:outline-none focus:border-[#1b2140]"
                         />
-                        <label className="block text-xs font-semibold text-slate-600" htmlFor={`draft-media-${post.id}`}>
+                        <label className="block text-xs font-semibold text-[#5b6475]" htmlFor={`draft-media-${post.id}`}>
                           <span className="flex items-center gap-1">
-                            <ImagePlus className="h-4 w-4" /> Upload an approved PNG or JPEG image (up to 10 MB)
+                            <ImagePlus className="h-4 w-4 text-[#5b6475]" /> Upload PNG or JPEG image (up to 10 MB)
                           </span>
                         </label>
                         <input
@@ -366,54 +341,45 @@ export default function PostMonitor({ onNavigate }) {
                           type="file"
                           accept="image/png,image/jpeg"
                           onChange={handleUploadDraftMedia}
-                          className="w-full rounded-xl border border-slate-300 bg-white p-2 text-sm text-slate-800"
+                          className="w-full rounded-[10px] border border-[#d5d9e6] bg-white p-2 text-xs text-[#141a2e]"
                         />
-                        {draftMediaUrl && <img src={mediaSource(draftMediaUrl)} alt="Selected post visual" className="max-h-48 rounded-xl border object-contain" />}
                         {draftMediaUrl && (
-                          <button type="button" onClick={() => setDraftMediaUrl('')} className="text-xs text-rose-700">
+                          <img src={mediaSource(draftMediaUrl)} alt="Selected post visual" className="max-h-48 rounded-xl border border-[#e4e7ef] object-contain" />
+                        )}
+                        {draftMediaUrl && (
+                          <button type="button" onClick={() => setDraftMediaUrl('')} className="text-xs font-semibold text-[#a31f1f] hover:underline cursor-pointer">
                             Remove selected image
                           </button>
                         )}
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        <p className="text-sm text-slate-800 leading-relaxed font-normal whitespace-pre-line">
+                      <div className="space-y-2">
+                        <p className="text-sm text-[#141a2e] leading-relaxed whitespace-pre-line font-normal">
                           {post.message || 'No caption text.'}
                         </p>
                         {post.media_brief && (
-                          <p className="text-xs text-slate-500"><strong>Visual concept:</strong> {post.media_brief}</p>
-                        )}
-                        {post.missing_facts?.length > 0 && (
-                          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                            <strong>Administrator fact check:</strong>
-                            <ul className="mt-1 list-inside list-disc">{post.missing_facts.map((fact) => <li key={fact}>{fact}</li>)}</ul>
-                          </div>
+                          <p className="text-xs text-[#5b6475]"><strong>Visual concept:</strong> {post.media_brief}</p>
                         )}
                       </div>
-                    )}
-                    {post.generation_source === 'local_fallback' && (
-                      <p className="text-xs font-semibold text-amber-700">
-                        Local template draft — review and verify all details before publishing.
-                      </p>
                     )}
                   </div>
                 </div>
 
-                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+                <div className="p-4 bg-white border-t border-[#eceef5] flex items-center justify-between text-xs text-[#5b6475]">
                   {isDraft ? (
                     <div className="flex items-center justify-between w-full">
                       {editingDraftId === post.id ? (
                         <>
                           <button
                             onClick={() => setEditingDraftId(null)}
-                            className="text-slate-600 hover:text-slate-800 font-semibold"
+                            className="text-xs font-semibold text-[#5b6475] hover:text-[#141a2e] cursor-pointer"
                           >
                             Cancel edit
                           </button>
                           <button
                             onClick={() => handleSaveDraft(post.id)}
                             disabled={savingDraft || !draftMessage.trim()}
-                            className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-xs"
+                            className="px-4 py-1.5 bg-[#1b2140] hover:bg-[#28315c] disabled:opacity-50 text-white font-semibold rounded-[10px] text-xs cursor-pointer"
                           >
                             {savingDraft ? 'Saving...' : 'Save draft'}
                           </button>
@@ -422,7 +388,7 @@ export default function PostMonitor({ onNavigate }) {
                         <>
                           <button
                             onClick={() => handleDeletePost(post.id)}
-                            className="text-rose-600 hover:text-rose-800 flex items-center gap-1 font-semibold"
+                            className="text-[#a31f1f] hover:underline flex items-center gap-1 font-semibold cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             <span>Discard</span>
@@ -430,14 +396,14 @@ export default function PostMonitor({ onNavigate }) {
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleEditDraft(post)}
-                              className="px-3 py-1.5 border border-slate-300 text-slate-700 font-bold rounded-xl flex items-center gap-1"
+                              className="px-3.5 py-1.5 border border-[#d5d9e6] hover:bg-[#f4f5f9] text-[#141a2e] font-semibold rounded-[10px] text-xs flex items-center gap-1 cursor-pointer"
                             >
-                              <Edit3 className="w-3.5 h-3.5" />
+                              <Edit3 className="w-3.5 h-3.5 text-[#5b6475]" />
                               Edit
                             </button>
                             <button
                               onClick={() => onNavigate?.('content')}
-                              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
+                              className="px-4 py-1.5 bg-[#1b2140] hover:bg-[#28315c] text-white font-semibold rounded-[10px] text-xs cursor-pointer flex items-center gap-1.5"
                             >
                               <span>Review &amp; approve</span>
                             </button>
@@ -448,11 +414,11 @@ export default function PostMonitor({ onNavigate }) {
                   ) : (
                     <>
                       <div className="flex items-center space-x-4">
-                        <span className="flex items-center gap-1 font-semibold">
-                          <ThumbsUp className="w-3.5 h-3.5 text-blue-600" /> {post.like_count}
+                        <span className="flex items-center gap-1 text-[#5b6475]">
+                          <ThumbsUp className="w-3.5 h-3.5 text-[#1b2140]" /> {post.like_count} likes
                         </span>
-                        <span className="flex items-center gap-1 font-semibold">
-                          <MessageSquare className="w-3.5 h-3.5 text-indigo-600" /> {post.comment_count}
+                        <span className="flex items-center gap-1 text-[#5b6475]">
+                          <MessageSquare className="w-3.5 h-3.5 text-[#1b2140]" /> {post.comment_count} comments
                         </span>
                       </div>
 
@@ -460,16 +426,16 @@ export default function PostMonitor({ onNavigate }) {
                         <button
                           onClick={() => handleSyncComments(post)}
                           disabled={syncingCommentsId === post.id}
-                          className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 text-xs font-semibold"
+                          className="px-3 py-1.5 rounded-[10px] border border-[#d5d9e6] hover:bg-[#f4f5f9] text-[#141a2e] disabled:opacity-50 text-xs font-semibold cursor-pointer"
                         >
                           {syncingCommentsId === post.id ? 'Syncing…' : 'Sync comments'}
                         </button>
                         <button
                           onClick={() => handleToggleMonitoring(post.id)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
+                          className={`px-3 py-1.5 rounded-[10px] text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
                             post.is_monitored
-                              ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                              ? 'bg-[#dff5ea] text-[#0b6b4a]'
+                              : 'bg-[#eceef5] text-[#3a4358]'
                           }`}
                         >
                           {post.is_monitored ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
@@ -481,7 +447,7 @@ export default function PostMonitor({ onNavigate }) {
                             href={post.permalink_url}
                             target="_blank"
                             rel="noreferrer"
-                            className="p-1 rounded-lg hover:bg-slate-200 text-slate-500 transition-colors"
+                            className="p-1.5 rounded-[10px] border border-[#d5d9e6] hover:bg-[#f4f5f9] text-[#5b6475] transition-colors"
                             title="Open on Facebook"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
@@ -499,19 +465,19 @@ export default function PostMonitor({ onNavigate }) {
 
       {/* Generate AI Post Modal */}
       {showGenerateModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
-            <div className="flex items-center space-x-2 text-indigo-600 font-bold text-lg">
-              <Sparkles className="w-5 h-5" />
-              <h3 className="text-slate-900">Generate Facebook Post Draft</h3>
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-[#e4e7ef] max-w-lg w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-center space-x-2">
+              <Sparkles className="w-5 h-5 text-[#1b2140]" />
+              <h3 className="text-lg font-bold text-[#141a2e]">Generate Facebook Post Draft</h3>
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-[#5b6475]">
               Generate a caption and save it as a draft for review. It will never publish immediately.
             </p>
 
-            <form onSubmit={handleGeneratePost} className="space-y-3.5 text-xs">
+            <form onSubmit={handleGeneratePost} className="space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1" htmlFor="post-page">
+                <label className="block font-semibold text-[#5b6475] mb-1.5" htmlFor="post-page">
                   Facebook Page
                 </label>
                 <select
@@ -520,7 +486,7 @@ export default function PostMonitor({ onNavigate }) {
                   value={selectedPageId}
                   onChange={(e) => setSelectedPageId(e.target.value)}
                   disabled={loadingPages || pages.length === 0}
-                  className="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-[10px] border border-[#d5d9e6] bg-white p-2.5 text-sm text-[#141a2e] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loadingPages ? (
                     <option value="">Loading Pages...</option>
@@ -535,31 +501,31 @@ export default function PostMonitor({ onNavigate }) {
                   )}
                 </select>
                 {!loadingPages && pages.length === 0 && (
-                  <p className="mt-1 text-amber-700">
+                  <p className="mt-1 text-[#a31f1f]">
                     Connect a Facebook Page before generating a post draft.
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Topic or Product Focus</label>
+                <label className="block font-semibold text-[#5b6475] mb-1.5">Topic or Product Focus</label>
                 <input
                   type="text"
                   required
                   value={postTopic}
                   onChange={(e) => setPostTopic(e.target.value)}
-                  placeholder="e.g. Festival Mega Sale, New Arrival Earbuds, Customer Weekend Tip..."
-                  className="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500"
+                  placeholder="e.g. Festival Mega Sale, New Arrival Earbuds..."
+                  className="w-full rounded-[10px] border border-[#d5d9e6] bg-white p-2.5 text-sm text-[#141a2e] focus:outline-none focus:border-[#1b2140]"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Language</label>
+                  <label className="block font-semibold text-[#5b6475] mb-1.5">Language</label>
                   <select
                     value={postLang}
                     onChange={(e) => setPostLang(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-300"
+                    className="w-full rounded-[10px] border border-[#d5d9e6] bg-white p-2.5 text-sm text-[#141a2e]"
                   >
                     <option value="ne">नेपाली (Nepali)</option>
                     <option value="bilingual">Bilingual (English + Nepali)</option>
@@ -567,25 +533,26 @@ export default function PostMonitor({ onNavigate }) {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Tone & Theme</label>
+                  <label className="block font-semibold text-[#5b6475] mb-1.5">Tone &amp; Theme</label>
                   <select
                     value={postTone}
                     onChange={(e) => setPostTone(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-300"
+                    className="w-full rounded-[10px] border border-[#d5d9e6] bg-white p-2.5 text-sm text-[#141a2e]"
                   >
-                    <option value="promotional">Promotional & Offers</option>
-                    <option value="festive">Festive & Greetings</option>
+                    <option value="promotional">Promotional &amp; Offers</option>
+                    <option value="festive">Festive &amp; Greetings</option>
                     <option value="engagement">Question / Engagement Hook</option>
                     <option value="tips">Educational Tips</option>
                   </select>
                 </div>
               </div>
+
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Caption length</label>
+                <label className="block font-semibold text-[#5b6475] mb-1.5">Caption length</label>
                 <select
                   value={contentLength}
                   onChange={(event) => setContentLength(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 p-2.5"
+                  className="w-full rounded-[10px] border border-[#d5d9e6] bg-white p-2.5 text-sm text-[#141a2e]"
                 >
                   <option value="short">Short · 60–100 words</option>
                   <option value="standard">Standard · 120–200 words</option>
@@ -594,24 +561,24 @@ export default function PostMonitor({ onNavigate }) {
                 </select>
               </div>
 
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800">
+              <div className="p-3 bg-[#fff8eb] rounded-xl border border-[#ffe3b8] text-xs text-[#7a3f00]">
                 Generated content is saved to drafts. Review it and edit any claims before publishing.
               </div>
 
-              <div className="flex justify-end space-x-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowGenerateModal(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold"
+                  className="px-4 py-2 rounded-[10px] border border-[#d5d9e6] text-[#5b6475] hover:text-[#141a2e] font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={generating || loadingPages || pages.length === 0 || !selectedPageId}
-                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold flex items-center gap-1.5"
+                  className="px-5 py-2 rounded-[10px] bg-[#1b2140] hover:bg-[#28315c] text-white font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className="w-3.5 h-3.5 text-[#ffb84d]" />
                   <span>{generating ? 'Drafting Post...' : 'Generate Post'}</span>
                 </button>
               </div>

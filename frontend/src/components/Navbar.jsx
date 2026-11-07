@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Power, RefreshCw, Sparkles, LogOut, FlaskConical } from 'lucide-react';
+import { Power, RefreshCw, LogOut, FlaskConical } from 'lucide-react';
 import api from '../api';
 
 export default function Navbar({
   metrics,
   simulationMode,
   liveModeReady,
-  liveModeBlockers,
+  liveModeBlockers = [],
   onSimulationModeChanged,
   onRefresh,
   onLogout,
@@ -52,89 +52,85 @@ export default function Navbar({
   };
 
   return (
-    <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-6 py-3.5 flex items-center justify-between shadow-xs">
-      <div className="flex items-center space-x-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-          PL
-        </div>
-        <div>
-          <div className="flex items-center space-x-2">
-            <h1 className="text-lg font-bold text-slate-900 tracking-tight">PyLoom Automation</h1>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-              v1.0 MoE
-            </span>
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
-              <Sparkles className="w-3 h-3" /> Bilingual Gemini AI
-            </span>
-          </div>
-          <p className="text-xs text-slate-500">Facebook Page Engagement & Automation System (ANNEX A)</p>
-        </div>
+    <header className="bg-white border-b border-[#e4e7ef] sticky top-0 z-30 px-6 py-2.5 flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#f4f5f9] text-[#1b2140] border border-[#e4e7ef]">
+          Bilingual AI Engagement · English &amp; नेपाली
+        </span>
       </div>
 
-      <div className="flex items-center space-x-3">
+      <div className="flex items-center gap-2.5">
+        {/* Simulation Mode Pill Toggle */}
         <div className="flex flex-col items-end">
           <button
             type="button"
             onClick={handleToggleSimulation}
             disabled={changingMode || (simulationMode && !liveModeReady)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
               simulationMode
-                ? 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'
-                : 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
+                ? 'bg-white border-[#e4e7ef] text-[#5b6475] hover:text-[#141a2e] hover:border-slate-300'
+                : 'bg-[#dff5ea] border-[#0b6b4a]/30 text-[#0b6b4a] font-semibold'
             }`}
             title={
               simulationMode && !liveModeReady
                 ? liveModeBlockers.join(' ')
                 : simulationMode
-                  ? 'Turn simulation off for live Facebook operations'
-                  : 'Turn simulation on for a trial run'
+                  ? 'Click to switch to live Facebook mode'
+                  : 'Click to switch to trial simulation'
             }
           >
             <FlaskConical className="w-3.5 h-3.5" />
-            <span>{simulationMode ? 'Simulation ON' : 'Simulation OFF'}</span>
-            <span aria-hidden="true">{simulationMode ? '→ Live' : '→ Trial'}</span>
+            <span>{simulationMode ? 'Simulation on · Trial' : 'Simulation off · Live'}</span>
           </button>
           {simulationMode && !liveModeReady && (
-            <span className="mt-1 max-w-56 text-right text-[10px] text-slate-500">
-              Validate the real Page before switching live.
+            <span className="mt-0.5 max-w-56 text-right text-[10px] text-[#5b6475]">
+              Validate real Page before switching live.
             </span>
           )}
         </div>
 
         {/* Status Badge */}
-        <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg border bg-slate-50 border-slate-200 text-xs">
-          <span className={`w-2.5 h-2.5 rounded-full ${metrics?.automation_active ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-          <span className="font-medium text-slate-700">
-            {metrics?.automation_active ? 'Automation Active' : 'Automation Paused'}
-          </span>
-        </div>
+        <span className="inline-flex items-center gap-2 bg-white border border-[#e4e7ef] rounded-full px-3.5 py-1.5 text-xs font-medium text-[#141a2e]">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              metrics?.automation_active ? 'bg-[#12875f]' : 'bg-[#a31f1f]'
+            }`}
+          />
+          {metrics?.automation_active ? 'Automation active' : 'Automation paused'}
+        </span>
 
-        {/* Global Emergency Kill Switch */}
+        {/* Emergency Halt / Resume Button */}
         <button
           onClick={handleToggleEmergency}
           disabled={stopping}
-          className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-xs ${
+          className={`flex items-center gap-1.5 px-4 min-h-[36px] rounded-[10px] text-xs font-semibold transition-all ${
             metrics?.automation_active
-              ? 'bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 hover:text-rose-800'
-              : 'bg-emerald-600 text-white hover:bg-emerald-700'
+              ? 'bg-white border border-[#e9b8b8] text-[#a31f1f] hover:bg-[#fde4e4]'
+              : 'bg-[#0b6b4a] border border-[#0b6b4a] text-white hover:bg-[#09573c]'
           }`}
-          title={metrics?.automation_active ? "Emergency Stop: Instantly halt all automations" : "Resume Automations"}
+          title={
+            metrics?.automation_active
+              ? 'Emergency Stop: Instantly halt all automations'
+              : 'Resume Automations'
+          }
         >
           <Power className="w-3.5 h-3.5" />
-          <span>{metrics?.automation_active ? 'Emergency Halt' : 'Resume Automation'}</span>
+          <span>{metrics?.automation_active ? 'Emergency halt' : 'Resume automation'}</span>
         </button>
 
         {/* Refresh Data */}
         <button
           onClick={onRefresh}
-          className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+          className="p-2 rounded-[10px] text-[#5b6475] hover:text-[#141a2e] hover:bg-[#eef0f6] transition-colors"
           title="Refresh Dashboard"
         >
           <RefreshCw className="w-4 h-4" />
         </button>
+
+        {/* Sign out */}
         <button
           onClick={onLogout}
-          className="p-2 rounded-lg text-slate-500 hover:text-rose-700 hover:bg-rose-50 transition-colors"
+          className="p-2 rounded-[10px] text-[#5b6475] hover:text-[#a31f1f] hover:bg-[#fde4e4] transition-colors"
           title="Sign out"
           aria-label="Sign out"
         >

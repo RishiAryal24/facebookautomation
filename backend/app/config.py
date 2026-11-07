@@ -39,7 +39,8 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-3.8-flash"
     GEMINI_FALLBACK_MODEL: str = "gemini-3.5-flash-lite"
     ENABLE_LOCAL_AI_FALLBACK: bool = False
-    GEMINI_IMAGE_MODEL: str = "gemini-nano-banana-2.1"
+    GEMINI_IMAGE_MODEL: str = "gemini-2.5-flash-image"
+    IMAGE_GENERATION_PROVIDER: str = "pollinations"
     MEDIA_STORAGE_DIR: Path = Path(__file__).resolve().parents[1] / "media"
     MEDIA_PUBLIC_BASE_URL: str = ""
     

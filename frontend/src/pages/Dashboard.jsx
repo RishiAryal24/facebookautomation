@@ -1,225 +1,187 @@
 import React from 'react';
-import { 
-  Globe2, 
-  Newspaper, 
-  MessageSquare, 
-  Clock, 
-  CheckCircle2, 
-  Heart, 
-  ArrowRight, 
-  Play,
-  ShieldCheck
-} from 'lucide-react';
+import { ArrowRight, Play, CheckCircle2 } from 'lucide-react';
 
 export default function Dashboard({ metrics, onNavigate, onSimulateQuick }) {
-  const cards = [
+  const pendingCount = metrics?.pending_approvals_count || 0;
+
+  const statCards = [
     {
-      title: 'Connected Pages',
+      title: 'Connected pages',
       value: metrics?.total_pages_connected || 0,
-      icon: Globe2,
-      color: 'text-blue-600',
-      bg: 'bg-blue-50',
-      border: 'border-blue-100',
-      actionText: 'Manage Pages',
-      tab: 'pages'
+      actionText: 'Manage pages →',
+      tab: 'pages',
     },
     {
-      title: 'Monitored Posts',
+      title: 'Monitored posts',
       value: metrics?.total_posts_monitored || 0,
-      icon: Newspaper,
-      color: 'text-indigo-600',
-      bg: 'bg-indigo-50',
-      border: 'border-indigo-100',
-      actionText: 'View Feed',
-      tab: 'posts'
+      actionText: 'View feed →',
+      tab: 'posts',
     },
     {
-      title: 'Comments Ingested',
+      title: 'Comments ingested',
       value: metrics?.total_comments_received || 0,
-      icon: MessageSquare,
-      color: 'text-purple-600',
-      bg: 'bg-purple-50',
-      border: 'border-purple-100',
-      actionText: 'View Posts',
-      tab: 'posts'
+      actionText: 'View posts →',
+      tab: 'posts',
     },
     {
-      title: 'Pending Approvals',
-      value: metrics?.pending_approvals_count || 0,
-      icon: Clock,
-      color: 'text-amber-600',
-      bg: 'bg-amber-50',
-      border: 'border-amber-200',
-      actionText: 'Triage Queue',
-      tab: 'queue',
-      highlight: (metrics?.pending_approvals_count || 0) > 0
-    },
-    {
-      title: 'Published AI Replies',
+      title: 'Published AI replies',
       value: metrics?.published_replies_count || 0,
-      icon: CheckCircle2,
-      color: 'text-emerald-600',
-      bg: 'bg-emerald-50',
-      border: 'border-emerald-100',
-      actionText: 'Audit Logs',
-      tab: 'logs'
+      actionText: 'Audit logs →',
+      tab: 'logs',
     },
     {
-      title: 'Likes & Reactions',
+      title: 'Likes & reactions',
       value: metrics?.total_likes_given || 0,
-      icon: Heart,
-      color: 'text-rose-600',
-      bg: 'bg-rose-50',
-      border: 'border-rose-100',
-      actionText: 'Engagement Settings',
-      tab: 'rules'
+      actionText: 'Engagement settings →',
+      tab: 'rules',
     },
   ];
 
   return (
     <div className="space-y-6">
-      {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 rounded-2xl p-6 text-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      {/* Top Greeting Header */}
+      <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <span className="px-2.5 py-1 bg-white/20 rounded-full text-xs font-semibold uppercase tracking-wider backdrop-blur-xs">
-            PyLoom Facebook Automation Control Hub
-          </span>
-          <h2 className="text-2xl font-bold mt-2">Bilingual AI Engagement Engine</h2>
-          <p className="text-blue-100 text-sm mt-1 max-w-xl">
-            Autonomous & supervised Facebook comment response, policy-compliant reactions, and real-time sentiment analysis in English and Nepali.
+          <h1 className="text-2xl font-bold tracking-tight text-[#141a2e]">Good morning</h1>
+          <p className="text-sm text-[#5b6475] mt-0.5">
+            Bilingual AI engagement for Facebook Pages · English &amp; <span className="font-devanagari">नेपाली</span>
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => onNavigate('simulator')}
-            className="px-4 py-2 bg-white text-blue-700 hover:bg-blue-50 font-semibold text-sm rounded-xl transition-all shadow-sm flex items-center gap-2"
-          >
-            <Play className="w-4 h-4 fill-current" />
-            <span>Test Live Comment</span>
-          </button>
+      </header>
+
+      {/* Hero Attention Card */}
+      <section className="bg-[#1b2140] text-white rounded-[20px] p-7 md:p-8 flex flex-wrap gap-6 items-center justify-between shadow-sm">
+        <div className="max-w-xl">
+          <div className="text-[13px] font-semibold text-[#aab4ff] mb-2">Needs your attention</div>
+          <div className="text-2xl md:text-[28px] font-bold tracking-tight leading-snug">
+            {pendingCount > 0
+              ? `${pendingCount} AI ${pendingCount === 1 ? 'reply is' : 'replies are'} waiting for approval`
+              : 'All caught up · 0 replies waiting for approval'}
+          </div>
+          <p className="text-sm text-[#c8cde6] mt-2 leading-relaxed">
+            Review each draft before it goes live. Approved replies are posted within the 30 actions per hour limit.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2.5">
           <button
             onClick={() => onNavigate('queue')}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold text-sm rounded-xl transition-all shadow-sm flex items-center gap-2"
+            className="min-h-[46px] bg-[#ffb84d] hover:bg-[#ffc670] text-[#2a1700] border-0 rounded-xl px-5.5 text-sm font-bold transition-colors cursor-pointer shadow-xs"
           >
-            <Clock className="w-4 h-4" />
-            <span>Review Queue ({metrics?.pending_approvals_count || 0})</span>
+            Review queue ({pendingCount})
+          </button>
+          <button
+            onClick={() => onNavigate('simulator')}
+            className="min-h-[46px] bg-transparent hover:bg-white/10 text-white border border-[#5a6390] rounded-xl px-5.5 text-sm font-semibold transition-colors cursor-pointer flex items-center gap-2"
+          >
+            <Play className="w-4 h-4 fill-current" />
+            <span>Test live comment</span>
           </button>
         </div>
-      </div>
+      </section>
 
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {cards.map((card, idx) => {
-          const Icon = card.icon;
-          return (
-            <div
-              key={idx}
-              className={`bg-white rounded-2xl p-5 border transition-all hover:shadow-md ${card.border} ${
-                card.highlight ? 'ring-2 ring-amber-400' : ''
-              }`}
+      {/* Metric Stat Cards Grid */}
+      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {statCards.map((card, idx) => (
+          <div
+            key={idx}
+            className="bg-white border border-[#e4e7ef] rounded-2xl p-5 flex flex-col justify-between transition-shadow hover:shadow-xs"
+          >
+            <div className="text-[13px] text-[#5b6475] font-medium">{card.title}</div>
+            <div className="text-[34px] font-bold text-[#141a2e] my-1.5 tracking-tight leading-none">
+              {card.value}
+            </div>
+            <button
+              onClick={() => onNavigate(card.tab)}
+              className="text-[13px] font-semibold text-[#2f3fb8] hover:underline text-left inline-flex items-center gap-1 cursor-pointer pt-1"
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                  {card.title}
-                </span>
-                <div className={`p-2.5 rounded-xl ${card.bg}`}>
-                  <Icon className={`w-5 h-5 ${card.color}`} />
-                </div>
-              </div>
-              <div className="mt-3 flex items-baseline justify-between">
-                <span className="text-3xl font-extrabold text-slate-900">{card.value}</span>
-                <button
-                  onClick={() => onNavigate(card.tab)}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 group"
-                >
-                  <span>{card.actionText}</span>
-                  <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Quick Status & Recent Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Policy Guardrails Status Card */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 space-y-4">
-          <div className="flex items-center space-x-2 text-slate-900 font-bold">
-            <ShieldCheck className="w-5 h-5 text-emerald-600" />
-            <span>Safety & Policy Guardrails</span>
+              <span>{card.actionText}</span>
+            </button>
           </div>
-          <div className="space-y-3 text-xs">
-            <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl">
-              <span className="text-slate-600 font-medium">Bilingual Support</span>
-              <span className="font-semibold text-slate-900">English + नेपाली</span>
+        ))}
+      </section>
+
+      {/* 2-Column Split: Recent Actions & Policy Guardrails */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        {/* Recent Automated Actions */}
+        <div className="bg-white border border-[#e4e7ef] rounded-2xl p-5.5 flex flex-col">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-base font-bold text-[#141a2e]">Recent automated actions</h2>
+            <button
+              onClick={() => onNavigate('logs')}
+              className="text-[13px] font-semibold text-[#2f3fb8] hover:underline cursor-pointer"
+            >
+              Full audit log →
+            </button>
+          </div>
+
+          <div className="divide-y divide-[#eceef5]">
+            {(metrics?.recent_activity || []).length === 0 ? (
+              <p className="text-sm text-[#5b6475] py-8 text-center">No recent actions recorded yet.</p>
+            ) : (
+              metrics.recent_activity.slice(0, 6).map((item) => (
+                <div key={item.id} className="flex items-center gap-3 py-3 text-sm">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                      item.status === 'success'
+                        ? 'bg-[#12875f]'
+                        : item.status === 'failed'
+                        ? 'bg-[#a31f1f]'
+                        : 'bg-[#c97700]'
+                    }`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-[#141a2e] capitalize">
+                      {item.action_type.replaceAll('_', ' ')}
+                    </div>
+                    <div className="text-xs text-[#5b6475] truncate">
+                      {item.details?.sender
+                        ? `User: ${item.details.sender}`
+                        : item.details?.message || item.action_type}
+                    </div>
+                  </div>
+                  <span className="text-xs text-[#5b6475] shrink-0 font-mono">
+                    {new Date(item.created_at).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Safety & Policy Guardrails */}
+        <div className="bg-white border border-[#e4e7ef] rounded-2xl p-5.5 flex flex-col">
+          <h2 className="text-base font-bold text-[#141a2e] mb-2">Safety &amp; policy guardrails</h2>
+          <div className="divide-y divide-[#eceef5] text-sm">
+            <div className="flex justify-between items-center py-3">
+              <span className="text-[#5b6475]">Bilingual support</span>
+              <span className="font-semibold text-[#141a2e]">
+                English + <span className="font-devanagari">नेपाली</span>
+              </span>
             </div>
-            <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl">
-              <span className="text-slate-600 font-medium">Restricted Keyword Filter</span>
-              <span className="font-semibold text-emerald-600">Active (8 blocked)</span>
+            <div className="flex justify-between items-center py-3">
+              <span className="text-[#5b6475]">Restricted keyword filter</span>
+              <span className="font-semibold text-[#0b6b4a]">Active · 8 blocked</span>
             </div>
-            <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl">
-              <span className="text-slate-600 font-medium">Hourly Rate Limit</span>
-              <span className="font-semibold text-slate-900">Max 30 actions / hr</span>
+            <div className="flex justify-between items-center py-3">
+              <span className="text-[#5b6475]">Hourly rate limit</span>
+              <span className="font-semibold text-[#141a2e]">30 actions / hr</span>
             </div>
-            <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl">
-              <span className="text-slate-600 font-medium">Token Storage</span>
-              <span className="font-semibold text-emerald-600">AES-128 Fernet Encrypted</span>
+            <div className="flex justify-between items-center py-3">
+              <span className="text-[#5b6475]">Token encryption</span>
+              <span className="font-semibold text-[#0b6b4a]">AES-128 Fernet</span>
             </div>
           </div>
           <button
             onClick={() => onNavigate('rules')}
-            className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-colors"
+            className="mt-4 w-full min-h-[42px] bg-[#f4f5f9] hover:bg-[#eceef5] text-[#141a2e] border border-[#e4e7ef] rounded-xl text-xs font-semibold transition-colors cursor-pointer"
           >
-            Configure Rules & Limits
+            Configure Rules &amp; Limits
           </button>
         </div>
-
-        {/* Recent Activity Log Stream */}
-        <div className="lg:col-span-2 bg-white rounded-2xl p-5 border border-slate-200 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-slate-900 text-base">Recent Automated Actions</h3>
-            <button
-              onClick={() => onNavigate('logs')}
-              className="text-xs font-semibold text-blue-600 hover:text-blue-800"
-            >
-              View Full Audit Log
-            </button>
-          </div>
-
-          <div className="overflow-hidden">
-            <div className="space-y-2.5">
-              {(metrics?.recent_activity || []).length === 0 ? (
-                <p className="text-sm text-slate-400 py-6 text-center">No recent actions recorded yet.</p>
-              ) : (
-                metrics.recent_activity.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100/70 transition-colors text-xs"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <span className={`w-2 h-2 rounded-full ${
-                        item.status === 'success' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-rose-500' : 'bg-amber-500'
-                      }`} />
-                      <div>
-                        <span className="font-semibold text-slate-800 uppercase tracking-wider text-[10px] mr-2 px-1.5 py-0.5 rounded bg-white border border-slate-200">
-                          {item.action_type.replace('_', ' ')}
-                        </span>
-                        <span className="text-slate-600 font-medium">
-                          {item.details?.sender ? `User: ${item.details.sender}` : item.details?.message || item.action_type}
-                        </span>
-                      </div>
-                    </div>
-                    <span className="text-slate-400 text-[11px]">
-                      {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      </section>
     </div>
   );
 }

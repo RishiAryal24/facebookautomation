@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Check, 
-  X, 
-  RefreshCw, 
-  Edit3, 
-  Sparkles, 
-  Send, 
+import {
+  Check,
+  X,
+  RefreshCw,
+  Edit3,
+  Sparkles,
+  Send,
   AlertTriangle,
   Languages,
-  MessageCircle,
   ThumbsUp,
-  ExternalLink
 } from 'lucide-react';
 import api from '../api';
 
@@ -81,7 +79,6 @@ export default function ApprovalQueue({ onQueueUpdated }) {
         tone: selectedTone,
         target_language: selectedLang,
       });
-      // Update local state with new draft
       setComments((prev) =>
         prev.map((c) => (c.id === commentId ? res.data : c))
       );
@@ -103,46 +100,52 @@ export default function ApprovalQueue({ onQueueUpdated }) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-2">
-            <h2 className="text-xl font-bold text-slate-900">AI Comment Approval Queue</h2>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
-              {comments.length} Pending
-            </span>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold tracking-tight text-[#141a2e]">Approval Queue</h1>
+            {comments.length > 0 && (
+              <span className="bg-[#ffe3b8] text-[#7a3f00] text-xs font-bold px-2.5 py-0.5 rounded-full">
+                {comments.length}
+              </span>
+            )}
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Review, edit, or regenerate bilingual responses before replying on Facebook or Instagram.
+          <p className="text-sm text-[#5b6475] mt-0.5">
+            {comments.length === 0
+              ? 'All caught up. Nothing is waiting in the queue.'
+              : `${comments.length} AI replies waiting. Nothing is posted until you approve it.`}
           </p>
         </div>
-        <button
-          onClick={fetchQueue}
-          disabled={loading}
-          className="px-3.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
-      </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchQueue}
+            disabled={loading}
+            className="min-h-[40px] rounded-[10px] border border-[#d5d9e6] bg-white px-4 text-xs font-semibold text-[#141a2e] hover:bg-[#f4f5f9] flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
+      </header>
 
       {/* Queue Items */}
       {loading && comments.length === 0 ? (
-        <div className="p-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
-          <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
+        <div className="p-16 text-center text-[#5b6475] bg-white rounded-2xl border border-[#e4e7ef]">
+          <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-[#1b2140]" />
           <p className="text-sm">Loading pending approval queue...</p>
         </div>
       ) : comments.length === 0 ? (
-        <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 space-y-3">
-          <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+        <div className="p-16 text-center bg-white rounded-2xl border border-[#e4e7ef] space-y-3">
+          <div className="w-12 h-12 bg-[#dff5ea] text-[#0b6b4a] rounded-full flex items-center justify-center mx-auto">
             <Check className="w-6 h-6" />
           </div>
-          <h3 className="font-bold text-slate-900">All Caught Up!</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+          <h3 className="font-bold text-[#141a2e] text-base">All Caught Up!</h3>
+          <p className="text-xs text-[#5b6475] max-w-sm mx-auto">
             There are no comments waiting for approval. New comments arrive through configured Meta webhooks or manual post sync.
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
           {comments.map((comment) => {
             const isEditing = editingId === comment.id;
             const isRegenerating = regeneratingId === comment.id;
@@ -151,227 +154,173 @@ export default function ApprovalQueue({ onQueueUpdated }) {
             return (
               <div
                 key={comment.id}
-                className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden transition-all hover:border-slate-300"
+                className="bg-white rounded-2xl border border-[#e4e7ef] p-5 md:p-6 space-y-3.5 transition-shadow hover:shadow-xs"
               >
-                {/* Comment Header */}
-                <div className="p-4 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-bold text-slate-900 text-sm">{comment.sender_name}</span>
-                    <span className="rounded-md bg-pink-50 px-2 py-0.5 text-[10px] font-semibold capitalize text-pink-700">
-                      {comment.platform || 'facebook'}
-                    </span>
-                    {comment.is_simulated && (
-                      <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">
-                        Simulation only
-                      </span>
-                    )}
-                    <span className="text-slate-400">•</span>
-                    <span className="text-slate-500 font-medium">{comment.page_name || 'Facebook Page'}</span>
-                    <span className="text-slate-400">•</span>
-                    <span className="text-slate-400">
-                      {new Date(comment.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    {/* Language Badge */}
-                    <span className={`px-2 py-0.5 rounded-md font-semibold text-[11px] flex items-center gap-1 ${
-                      comment.detected_language === 'ne'
-                        ? 'bg-orange-50 text-orange-700 border border-orange-200'
-                        : 'bg-blue-50 text-blue-700 border border-blue-200'
-                    }`}>
-                      <Languages className="w-3 h-3" />
-                      {comment.detected_language === 'ne'
-                        ? 'नेपाली (Nepali)'
-                        : comment.detected_language === 'romanized_ne'
-                          ? 'Romanized Nepali'
-                          : 'English'}
-                    </span>
-
-                    {/* Sentiment Badge */}
-                    <span className={`px-2 py-0.5 rounded-md font-semibold text-[11px] capitalize ${
+                {/* Comment Meta Header */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <strong className="text-sm font-bold text-[#141a2e]">{comment.sender_name}</strong>
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${
                       comment.sentiment === 'positive'
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        ? 'bg-[#dff5ea] text-[#0b6b4a]'
                         : comment.sentiment === 'negative'
-                        ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                        : comment.sentiment === 'question'
-                        ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                        : 'bg-slate-100 text-slate-700'
-                    }`}>
-                      {comment.sentiment}
+                        ? 'bg-[#fde4e4] text-[#a31f1f]'
+                        : 'bg-[#ffe9c7] text-[#7a3f00]'
+                    }`}
+                  >
+                    {comment.sentiment || 'Neutral'}
+                  </span>
+                  <span className="rounded-full bg-[#eceef5] text-[#3a4358] px-2.5 py-0.5 text-xs font-semibold">
+                    {comment.detected_language === 'ne' ? 'नेपाली' : 'English'}
+                  </span>
+                  {comment.is_simulated && (
+                    <span className="rounded-full bg-[#ffe9c7] text-[#7a3f00] px-2 py-0.5 text-[11px] font-bold">
+                      Simulated
                     </span>
-
-                    {/* Safety Alert Flag */}
-                    {comment.error_message && (
-                      <span className="px-2 py-0.5 rounded-md font-semibold text-[11px] bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3 text-rose-600" />
-                        Review required
-                      </span>
-                    )}
-                  </div>
+                  )}
+                  <span className="ml-auto text-xs text-[#5b6475]">
+                    {new Date(comment.created_at).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
                 </div>
 
-                <div className="p-5 space-y-4">
-                  {/* Original Post Context */}
-                  {comment.post_message && (
-                    <div className="text-xs bg-slate-50 p-3 rounded-xl border border-slate-200/80 text-slate-600">
-                      <span className="font-semibold text-slate-800 block mb-1">Post Reference:</span>
-                      <p className="line-clamp-2 italic">"{comment.post_message}"</p>
-                    </div>
-                  )}
-
-                  {/* Customer's Comment */}
-                  <div className="flex items-start space-x-3">
-                    <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-600 text-xs shrink-0">
-                      {comment.sender_name.charAt(0)}
-                    </div>
-                    <div className="bg-slate-100/80 px-4 py-2.5 rounded-2xl rounded-tl-none text-sm text-slate-900 font-medium">
-                      {comment.message}
-                    </div>
+                {/* Original Post Context if available */}
+                {comment.post_message && (
+                  <div className="text-xs bg-[#f4f5f9] border border-[#e4e7ef] rounded-xl p-2.5 text-[#5b6475]">
+                    <span className="font-semibold text-[#141a2e] block mb-0.5">Post context:</span>
+                    <p className="line-clamp-2 italic text-[11px]">"{comment.post_message}"</p>
                   </div>
+                )}
 
-                  {/* Warning notice if keyword flagged */}
-                  {comment.error_message && (
-                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>{comment.error_message}</span>
-                    </div>
-                  )}
+                {/* Customer Comment Text */}
+                <div className="text-sm text-[#141a2e] leading-relaxed">
+                  {comment.message}
+                </div>
 
-                  {/* AI Response Draft Area */}
-                  <div className="pl-11 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-1.5 text-xs font-bold text-blue-700">
-                        <Sparkles className="w-4 h-4 text-blue-600" />
-                        <span>Suggested Reply</span>
-                        {comment.ai_generation_source && (
-                          <span className="font-medium text-slate-500">
-                            {comment.ai_generation_source === 'local_fallback'
-                              ? 'Local template — verify before publishing'
-                              : 'Gemini'}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Quick Tone & Regenerate Controls */}
-                      <div className="flex items-center space-x-2 text-xs">
-                        <select
-                          value={selectedTone}
-                          onChange={(e) => setSelectedTone(e.target.value)}
-                          className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-slate-700 text-xs font-medium"
-                        >
-                          <option value="friendly">Friendly Tone</option>
-                          <option value="professional">Professional</option>
-                          <option value="support">Customer Support</option>
-                          <option value="promotional">Promotional / Sales</option>
-                        </select>
-                        <select
-                          value={selectedLang}
-                          onChange={(e) => setSelectedLang(e.target.value)}
-                          className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-slate-700 text-xs font-medium"
-                        >
-                          <option value="ne">नेपाली</option>
-                          <option value="en">English</option>
-                        </select>
-                        <button
-                          onClick={() => handleRegenerate(comment.id)}
-                          disabled={isBusy}
-                          className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold border border-blue-200 flex items-center gap-1 transition-colors"
-                          title="Regenerate draft with selected tone and language"
-                        >
-                          <RefreshCw className={`w-3 h-3 ${isRegenerating ? 'animate-spin' : ''}`} />
-                          <span>Regenerate</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Draft Text or Edit Box */}
-                    {isEditing ? (
-                      <div className="space-y-2">
-                        <textarea
-                          rows={3}
-                          value={editedText}
-                          onChange={(e) => setEditedText(e.target.value)}
-                          className="w-full p-3 text-sm bg-white border border-blue-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                          placeholder="Type or modify reply..."
-                        />
-                        <div className="flex items-center justify-between text-xs text-slate-500">
-                          <span>Nepali Devanagari or English supported</span>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="text-slate-500 hover:text-slate-800 underline"
-                          >
-                            Cancel Edit
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/70 text-sm text-slate-900 font-normal leading-relaxed relative group">
-                        {comment.ai_draft_reply || 'No draft is available. Regenerate after checking AI configuration, or enter a reply manually.'}
-                        <button
-                          onClick={() => startEditing(comment)}
-                          className="absolute top-2 right-2 p-1.5 bg-white/90 hover:bg-white text-slate-600 rounded-lg shadow-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Edit this reply"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
+                {/* Safety Warning if flagged */}
+                {comment.error_message && (
+                  <div className="p-3 rounded-xl bg-[#fff8eb] border border-[#ffe3b8] text-[#7a3f00] text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-[#c97700]" />
+                    <span>{comment.error_message}</span>
                   </div>
+                )}
 
-                  {/* Action Bar */}
-                  <div className="pl-11 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                    {comment.platform !== 'instagram' && (
-                      <label className="flex items-center space-x-2 text-xs text-slate-600 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={alsoLike}
-                          onChange={(e) => setAlsoLike(e.target.checked)}
-                          className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="flex items-center gap-1">
-                          <ThumbsUp className="w-3 h-3 text-blue-600" />
-                          Also like customer's comment
-                        </span>
-                      </label>
-                    )}
+                {/* AI Draft Box */}
+                <div className="rounded-xl bg-[#f4f5f9] p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-semibold text-[#5b6475] flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#1b2140]" />
+                      <span>AI draft reply</span>
+                    </div>
 
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => handleReject(comment.id)}
-                        disabled={isBusy}
-                        className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-slate-600 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                    {/* Tone & Lang selector */}
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <select
+                        value={selectedTone}
+                        onChange={(e) => setSelectedTone(e.target.value)}
+                        className="rounded-lg border border-[#d5d9e6] bg-white px-2 py-1 text-[11px] text-[#141a2e]"
                       >
-                        <X className="w-3.5 h-3.5" />
-                        <span>Reject</span>
+                        <option value="friendly">Friendly</option>
+                        <option value="formal">Formal</option>
+                        <option value="support">Support</option>
+                      </select>
+                      <select
+                        value={selectedLang}
+                        onChange={(e) => setSelectedLang(e.target.value)}
+                        className="rounded-lg border border-[#d5d9e6] bg-white px-2 py-1 text-[11px] text-[#141a2e]"
+                      >
+                        <option value="ne">नेपाली</option>
+                        <option value="en">English</option>
+                      </select>
+                      <button
+                        onClick={() => handleRegenerate(comment.id)}
+                        disabled={isBusy}
+                        className="rounded-lg border border-[#d5d9e6] bg-white hover:bg-[#eceef5] px-2 py-1 text-[11px] font-semibold text-[#141a2e] disabled:opacity-50 cursor-pointer"
+                        title="Regenerate draft"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isRegenerating ? 'animate-spin' : ''}`} />
                       </button>
-
-                      {!isEditing && (
-                        <button
-                          onClick={() => startEditing(comment)}
-                          disabled={isBusy}
-                          className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors flex items-center gap-1.5"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>Edit</span>
-                        </button>
-                      )}
-
-                      {comment.is_simulated ? (
-                        <span className="text-xs font-semibold text-amber-800">
-                          Simulated comments cannot be published
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => handleApprove(comment.id)}
-                          disabled={isBusy || !(isEditing ? editedText.trim() : comment.ai_draft_reply?.trim())}
-                          className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>{isEditing ? 'Save & Publish' : 'Approve & Publish'}</span>
-                        </button>
-                      )}
                     </div>
+                  </div>
+
+                  {isEditing ? (
+                    <div className="space-y-2 pt-1">
+                      <textarea
+                        rows={3}
+                        value={editedText}
+                        onChange={(e) => setEditedText(e.target.value)}
+                        className="w-full rounded-[10px] border border-[#d5d9e6] p-2.5 text-sm bg-white text-[#141a2e] focus:outline-none focus:border-[#1b2140]"
+                        placeholder="Modify draft reply..."
+                      />
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="text-xs text-[#5b6475] hover:text-[#141a2e] underline cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-[#141a2e] leading-relaxed whitespace-pre-line">
+                      {comment.ai_draft_reply || 'No draft generated yet. Regenerate or enter a reply manually.'}
+                    </div>
+                  )}
+                </div>
+
+                {/* Action Bar */}
+                <div className="pt-2 border-t border-[#eceef5] flex flex-wrap items-center justify-between gap-2">
+                  {comment.platform !== 'instagram' && (
+                    <label className="flex items-center gap-1.5 text-xs text-[#5b6475] cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={alsoLike}
+                        onChange={(e) => setAlsoLike(e.target.checked)}
+                      />
+                      <span className="flex items-center gap-1 text-[#141a2e]">
+                        <ThumbsUp className="w-3 h-3 text-[#1b2140]" />
+                        Also like comment
+                      </span>
+                    </label>
+                  )}
+
+                  <div className="flex items-center gap-2 ml-auto">
+                    {comment.is_simulated ? (
+                      <span className="text-xs font-semibold text-[#7a3f00]">
+                        Simulated comments cannot be published
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleApprove(comment.id)}
+                        disabled={isBusy || !(isEditing ? editedText.trim() : comment.ai_draft_reply?.trim())}
+                        className="min-h-[38px] rounded-[10px] bg-[#0b6b4a] hover:bg-[#09573c] px-4 py-1.5 text-xs font-semibold text-white transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        <Send className="w-3 h-3" />
+                        <span>{isEditing ? 'Save & post' : 'Approve & post'}</span>
+                      </button>
+                    )}
+
+                    {!isEditing && (
+                      <button
+                        onClick={() => startEditing(comment)}
+                        disabled={isBusy}
+                        className="min-h-[38px] rounded-[10px] border border-[#d5d9e6] bg-white hover:bg-[#f4f5f9] px-3 py-1.5 text-xs font-semibold text-[#141a2e] transition-colors cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Edit3 className="w-3 h-3 text-[#5b6475]" />
+                        <span>Edit</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => handleReject(comment.id)}
+                      disabled={isBusy}
+                      className="min-h-[38px] rounded-[10px] border border-[#e9b8b8] bg-white hover:bg-[#fde4e4] px-3 py-1.5 text-xs font-semibold text-[#a31f1f] transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>Reject</span>
+                    </button>
                   </div>
                 </div>
               </div>

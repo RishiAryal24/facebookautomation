@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { LogIn } from 'lucide-react';
 import api from '../api';
 
 export default function Login({ onLogin }) {
@@ -31,19 +30,19 @@ export default function Login({ onLogin }) {
   };
 
   return (
-    <main className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-      <section className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+    <main className="min-h-screen bg-[#f4f5f9] flex items-center justify-center p-4">
+      <section className="w-full max-w-md rounded-2xl border border-[#e4e7ef] bg-white p-8 shadow-sm">
         <div className="mb-6">
-          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-white">
-            <LogIn className="h-5 w-5" />
+          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-[10px] bg-[#1b2140] text-white font-bold text-base shadow-xs">
+            PL
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Sign in</h1>
-          <p className="mt-1 text-sm text-slate-500">PyLoom Facebook Automation</p>
+          <h1 className="text-2xl font-bold tracking-tight text-[#141a2e]">Sign in</h1>
+          <p className="mt-1 text-sm text-[#5b6475]">PyLoom Facebook Automation</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="login-email" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="login-email" className="mb-1 block text-xs font-semibold text-[#5b6475]">
               Email
             </label>
             <input
@@ -53,12 +52,12 @@ export default function Login({ onLogin }) {
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-[10px] border border-[#d5d9e6] px-3 py-2.5 text-sm bg-white text-[#141a2e] focus:border-[#1b2140] focus:outline-none"
             />
           </div>
 
           <div>
-            <label htmlFor="login-password" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="login-password" className="mb-1 block text-xs font-semibold text-[#5b6475]">
               Password
             </label>
             <input
@@ -68,12 +67,12 @@ export default function Login({ onLogin }) {
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-[10px] border border-[#d5d9e6] px-3 py-2.5 text-sm bg-white text-[#141a2e] focus:border-[#1b2140] focus:outline-none"
             />
           </div>
 
           {error && (
-            <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <p role="alert" className="rounded-xl border border-[#e9b8b8] bg-[#fde4e4] px-3 py-2 text-xs font-medium text-[#a31f1f]">
               {error}
             </p>
           )}
@@ -81,7 +80,7 @@ export default function Login({ onLogin }) {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl bg-[#1b2140] hover:bg-[#28315c] px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer shadow-xs"
           >
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>

@@ -2,6 +2,34 @@
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 font-sans antialiased;
+    background-color: #f4f5f9;
+    color: #141a2e;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
+}
+
+.font-devanagari {
+  font-family: 'Noto Sans Devanagari', 'Inter', system-ui, sans-serif;
+}
+
+/* Redesign Color Token Utilities */
+.bg-navy-primary {
+  background-color: #1b2140;
+}
+
+.text-navy-primary {
+  color: #1b2140;
+}
+
+.border-navy-primary {
+  border-color: #1b2140;
+}
+
+.text-gold-accent {
+  color: #ffb84d;
+}
+
+.bg-gold-accent {
+  background-color: #ffb84d;
 }

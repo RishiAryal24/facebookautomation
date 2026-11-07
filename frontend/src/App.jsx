@@ -122,7 +122,7 @@ export default function App() {
   if (!accessToken) return <Login onLogin={handleLogin} />;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
+    <div className="min-h-screen bg-[#f4f5f9] flex flex-col font-sans text-[#141a2e]">
       <Navbar
         metrics={metrics}
         simulationMode={simulationMode}
