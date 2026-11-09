@@ -163,9 +163,19 @@ class PostRead(BaseModel):
     permalink_url: Optional[str] = None
     media_url: Optional[str] = None
     published_at: Optional[datetime] = None
-    like_count: int
-    comment_count: int
-    is_monitored: bool
+    like_count: int = 0
+    comment_count: int = 0
+    is_monitored: bool = True
+
+    @field_validator('like_count', 'comment_count', mode='before')
+    @classmethod
+    def default_zero_counts(cls, v: Any) -> int:
+        return 0 if v is None else int(v)
+
+    @field_validator('is_monitored', mode='before')
+    @classmethod
+    def default_monitored(cls, v: Any) -> bool:
+        return True if v is None else bool(v)
     is_ai_generated: bool = False
     generation_source: Optional[str] = None
     status: str = "published"
