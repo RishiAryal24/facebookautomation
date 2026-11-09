@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     GEMINI_IMAGE_MODEL: str = "gemini-2.5-flash-image"
     IMAGE_GENERATION_PROVIDER: str = "pollinations"
     POLLINATIONS_MODEL: str = "flux-realism"
+    POLLINATIONS_API_KEY: str = ""
+    HF_TOKEN: str = ""
+    HUGGINGFACE_MODEL: str = "black-forest-labs/FLUX.1-schnell"
     MEDIA_STORAGE_DIR: Path = Path(__file__).resolve().parents[1] / "media"
     MEDIA_PUBLIC_BASE_URL: str = ""
     

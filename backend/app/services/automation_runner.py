@@ -349,10 +349,10 @@ class AutomationEngine:
         if include_image:
             visual_topic = topic or category or "business technology"
             image_prompt = (
-                "Award-winning commercial photography, {image_brief}. "
+                "High-impact 3D visual render of {image_brief}. "
                 f"Theme: {visual_topic}. "
-                "Cinematic lighting, high-end production value, rich architectural texture, "
-                "depth of field, subtle corporate navy and warm neutral accents, photorealistic, 8k resolution."
+                "High dynamic range, vivid color saturation, illuminated neon and metallic accents, "
+                "ultra-sharp detail across the entire frame, 8k resolution, cinematic masterpiece."
             )
 
         ai_post = await gemini_service.generate_social_post(

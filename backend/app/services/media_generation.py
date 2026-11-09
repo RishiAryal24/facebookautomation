@@ -4,6 +4,7 @@ import binascii
 import io
 import logging
 import mimetypes
+import os
 import random
 import time
 import uuid
@@ -52,7 +53,18 @@ class MediaGenerationService:
 
     async def generate_image(self, prompt: str) -> Dict[str, str]:
         provider = getattr(settings, "IMAGE_GENERATION_PROVIDER", "pollinations").lower()
+        hf_token = getattr(settings, "HF_TOKEN", "") or os.getenv("HF_TOKEN", "")
 
+        # 1. If Hugging Face token is provided or explicit provider, use Hugging Face FLUX.1-schnell
+        if provider == "huggingface" or (hf_token and provider != "gemini"):
+            try:
+                return await self._generate_with_huggingface(prompt)
+            except MediaGenerationError as exc:
+                if provider == "huggingface":
+                    raise
+                logger.info("Hugging Face generation unavailable (%s); falling back to Pollinations", exc)
+
+        # 2. If Gemini image generation is mocked/configured
         if hasattr(self._client, "interactions") or provider == "gemini":
             try:
                 return await self._generate_with_gemini(prompt)
@@ -65,14 +77,66 @@ class MediaGenerationService:
                 )
                 return await self._generate_with_pollinations(prompt)
 
+        # 3. Default to enhanced Pollinations engine
         return await self._generate_with_pollinations(prompt)
+
+    async def _generate_with_huggingface(self, prompt: str) -> Dict[str, str]:
+        """Generate high-resolution 1024x1024 visuals via Hugging Face Serverless Inference API (Free Tier)."""
+        token = getattr(settings, "HF_TOKEN", "") or os.getenv("HF_TOKEN", "")
+        if not token:
+            raise MediaGenerationError("HF_TOKEN is not configured")
+
+        clean_prompt = " ".join(prompt.strip().split())
+        model = getattr(settings, "HUGGINGFACE_MODEL", "black-forest-labs/FLUX.1-schnell")
+        url = f"https://api-inference.huggingface.co/models/{model}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "inputs": clean_prompt,
+            "parameters": {"width": 1024, "height": 1024},
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=45.0, follow_redirects=True) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code == 503:
+                    raise MediaGenerationError("Hugging Face model is cold-starting; retrying via fallback")
+                if res.status_code != 200:
+                    raise MediaGenerationError(f"Hugging Face returned HTTP status {res.status_code}")
+                content = res.content
+        except httpx.TimeoutException as exc:
+            raise MediaGenerationError("Hugging Face image generation timed out.") from exc
+        except httpx.HTTPError as exc:
+            raise MediaGenerationError(f"Hugging Face network error: {exc}") from exc
+
+        if not content or len(content) < 1000:
+            raise MediaGenerationError("Hugging Face returned incomplete image data")
+
+        mime_type = "image/png"
+        extension = ".png"
+        try:
+            with Image.open(io.BytesIO(content)) as pil_img:
+                pil_format = (pil_img.format or "PNG").upper()
+                if pil_format == "JPEG":
+                    mime_type = "image/jpeg"
+                    extension = ".jpg"
+                else:
+                    mime_type = "image/png"
+                    extension = ".png"
+        except Exception:
+            pass
+
+        return self._save_image(content, mime_type, "generated", extension)
 
     async def _generate_with_pollinations(self, prompt: str) -> Dict[str, str]:
         """Generate high-quality 1024x1024 social visuals via Pollinations FLUX engine (Free Tier)."""
         clean_prompt = " ".join(prompt.strip().split())
         seed = random.randint(1000, 999999)
         model = getattr(settings, "POLLINATIONS_MODEL", "flux-realism")
-        negative_prompt = "text, typography, watermark, logo, deformed, distorted, cartoon, blurry, low resolution, bad hands, fake artifacts, messy handwriting"
+        # Ban empty conference rooms and desks, while allowing charts, UI metrics, and data graphics
+        negative_prompt = "empty room, empty conference room, empty table, empty desk, blurry, out of focus, low quality, low resolution, deformed, distorted, watermark, signature"
 
         query_params = {
             "width": "1024",
@@ -88,21 +152,39 @@ class MediaGenerationService:
             "User-Agent": "PyLoom-Automation/1.0 (Facebook Community Management)",
             "Accept": "image/jpeg,image/png,image/*",
         }
+        api_key = getattr(settings, "POLLINATIONS_API_KEY", "")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
 
-        try:
-            async with httpx.AsyncClient(timeout=40.0, follow_redirects=True) as client:
-                res = await client.get(url, headers=headers)
-                if res.status_code != 200:
+        content = None
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=40.0, follow_redirects=True) as client:
+                    res = await client.get(url, headers=headers)
+                    if res.status_code == 200:
+                        content = res.content
+                        break
+                    if res.status_code in (402, 503) and attempt == 0:
+                        # Rate limit or temporary service issue; wait 3s and retry once with new seed
+                        await asyncio.sleep(3)
+                        seed = random.randint(1000, 999999)
+                        query_params["seed"] = str(seed)
+                        query_string = "&".join(f"{k}={quote(v)}" for k, v in query_params.items())
+                        url = f"https://image.pollinations.ai/prompt/{quote(clean_prompt)}?{query_string}"
+                        continue
                     raise MediaGenerationError(
                         f"Pollinations returned HTTP status {res.status_code}"
                     )
-                content = res.content
-        except httpx.TimeoutException as exc:
-            raise MediaGenerationError(
-                "Image generation timed out. Please try again or upload an image manually."
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise MediaGenerationError(f"Image generation network error: {exc}") from exc
+            except httpx.TimeoutException as exc:
+                if attempt == 0:
+                    continue
+                raise MediaGenerationError(
+                    "Image generation timed out. Please try again or upload an image manually."
+                ) from exc
+            except httpx.HTTPError as exc:
+                if attempt == 0:
+                    continue
+                raise MediaGenerationError(f"Image generation network error: {exc}") from exc
 
         if not content or len(content) < 1000:
             raise MediaGenerationError("The image provider returned incomplete image data")
