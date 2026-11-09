@@ -505,7 +505,7 @@ Return JSON with:
                             "source": "gemini_api",
                         }
             if attempt == 1:
-                # If validation failed on final attempt, check if any overlong candidate can be trimmed cleanly
+                # 1. If validation failed on final attempt, check if any overlong candidate can be trimmed cleanly
                 for cand_message, cand_result in reversed(candidates):
                     trimmed = self._trim_to_word_range(cand_message, word_minimum, word_maximum)
                     if trimmed:
@@ -536,6 +536,48 @@ Return JSON with:
                             )
                             return {
                                 "message": trimmed.strip(),
+                                "image_brief": str(cand_image_brief).strip(),
+                                "missing_facts": list(dict.fromkeys(missing_facts)),
+                                "structure": str(cand_result.get("structure") or "educational"),
+                                "media_url": None,
+                                "source": "gemini_api",
+                            }
+
+                # 2. If trimming didn't apply (e.g. caption was slightly under, like 180-199 words for 200-300),
+                # accept the best candidate within a reasonable grace margin (>= 75% of min, <= 125% of max)
+                grace_minimum = max(20, int(word_minimum * 0.75))
+                grace_maximum = int(word_maximum * 1.25)
+                for cand_message, cand_result in reversed(candidates):
+                    cand_count = self._word_count(cand_message)
+                    if grace_minimum <= cand_count <= grace_maximum:
+                        normalized_cand = re.sub(r"\s+", " ", cand_message).casefold()
+                        if not any(
+                            SequenceMatcher(
+                                None,
+                                normalized_cand,
+                                re.sub(r"\s+", " ", recent).casefold(),
+                            ).ratio() >= 0.9
+                            for recent in (recent_posts or [])
+                        ):
+                            cand_image_brief = cand_result.get("image_brief") or "A clean, modern brand visual."
+                            returned_missing_facts = cand_result.get("missing_facts", [])
+                            if isinstance(returned_missing_facts, list):
+                                missing_facts.extend(
+                                    fact.strip()
+                                    for fact in returned_missing_facts
+                                    if isinstance(fact, str) and fact.strip()
+                                )
+                            logger.info(
+                                "Accepted caption of %d words within grace margin (%d-%d) for %s (%d-%d)",
+                                cand_count,
+                                grace_minimum,
+                                grace_maximum,
+                                content_length,
+                                word_minimum,
+                                word_maximum,
+                            )
+                            return {
+                                "message": cand_message.strip(),
                                 "image_brief": str(cand_image_brief).strip(),
                                 "missing_facts": list(dict.fromkeys(missing_facts)),
                                 "structure": str(cand_result.get("structure") or "educational"),

@@ -403,3 +403,40 @@ def test_social_post_trims_overlong_candidate_to_requested_range_when_retry_also
     assert len(calls) == 2
     word_count = service._word_count(result["message"])
     assert 200 <= word_count <= 300
+
+
+def test_social_post_accepts_caption_within_grace_margin_when_retry_slightly_under_minimum():
+    service = GeminiService()
+    calls = []
+    # Attempt 0 returns 190 words (slightly under 200 min for detailed), attempt 1 returns 192 words
+    attempt_0 = " ".join(f"word{i}" for i in range(190))
+    attempt_1 = " ".join(f"detail{i}" for i in range(192))
+    captions = [attempt_0, attempt_1]
+
+    class Models:
+        async def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                text=json.dumps(
+                    {
+                        "caption": captions[len(calls) - 1],
+                        "image_brief": "A clean editorial visual of analytics.",
+                        "missing_facts": [],
+                        "structure": "educational",
+                    }
+                )
+            )
+
+    service._client = SimpleNamespace(aio=SimpleNamespace(models=Models()))
+    result = asyncio.run(
+        service.generate_social_post(
+            topic="Insight360 Analytics",
+            language="en",
+            content_length="detailed",
+        )
+    )
+
+    assert len(calls) == 2
+    word_count = service._word_count(result["message"])
+    assert word_count == 192
+    assert "detail191" in result["message"]
