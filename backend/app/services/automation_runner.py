@@ -349,13 +349,10 @@ class AutomationEngine:
         if include_image:
             visual_topic = topic or category or "business technology"
             image_prompt = (
-                f"Create a polished, editorial-quality square social-media visual for PyLoom "
-                f"Technologies Pvt. Ltd. Subject: {visual_topic}. "
-                "Use the following verified visual direction from the content draft: "
-                "{image_brief}. Use a clean, contemporary technology-business "
-                "aesthetic, realistic details, and a restrained palette inspired by navy, "
-                "teal, and warm neutral tones. Do not include text, logos, invented product "
-                "screens, fabricated metrics, or identifiable real people."
+                "Professional commercial photography of {image_brief}. "
+                f"Topic context: {visual_topic}. "
+                "Contemporary architectural and business setting, realistic natural ambient lighting, "
+                "subtle corporate navy and warm neutral color grading, shot on 35mm lens, high aesthetic, photorealistic, 8k."
             )
 
         ai_post = await gemini_service.generate_social_post(

@@ -388,11 +388,10 @@ async def regenerate_post_media(
 
     topic = post.topic or post.content_category or "business technology"
     post.media_generation_prompt = (
-        f"Create a polished, editorial-quality square social-media visual for PyLoom "
-        f"Technologies Pvt. Ltd. Subject: {topic}. Concept: {post.media_brief}. "
-        "Use a clean, contemporary technology-business aesthetic, realistic details, and "
-        "a restrained palette inspired by navy, teal, and warm neutral tones. Do not "
-        "include text, logos, invented product screens, fabricated metrics, or identifiable real people."
+        f"Professional commercial photography of {post.media_brief.strip().rstrip('.')}. "
+        f"Topic context: {topic}. "
+        "Contemporary architectural and business setting, realistic natural ambient lighting, "
+        "subtle corporate navy and warm neutral color grading, shot on 35mm lens, high aesthetic, photorealistic, 8k."
     )
     post.media_status = "queued"
     post.media_url = None

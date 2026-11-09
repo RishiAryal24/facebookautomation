@@ -431,7 +431,7 @@ three relevant hashtags and no more than one emoji. Do not add a generic slogan.
 
 Return JSON with:
 - caption: complete post text in the requested language
-- image_brief: concise visual concept tied to the topic, with no text or logo in image
+- image_brief: descriptive photographic scene for an image generator (describe physical environment, lighting, composition, materials, and atmosphere in clear visual terms; do not mention text, typography, logos, UI screens, or specific people)
 - missing_facts: list of factual details an administrator should verify before publishing
 - structure: short name of the selected structure
 """
