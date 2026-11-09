@@ -19,6 +19,7 @@ from google.genai import types
 from google.genai.errors import APIError
 
 from app.config import settings
+from app.services.graphic_card_service import graphic_card_service
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +54,35 @@ class MediaGenerationService:
         return self._client
 
     async def generate_image(self, prompt: str) -> Dict[str, str]:
-        provider = getattr(settings, "IMAGE_GENERATION_PROVIDER", "pollinations").lower()
+        # If Gemini mock client is active in unit tests, run mock directly
+        if hasattr(self._client, "interactions"):
+            return await self._generate_with_gemini(prompt)
+
+        provider = getattr(settings, "IMAGE_GENERATION_PROVIDER", "auto").lower()
+
+        # 1. Zero-Cost Branded Graphic Card Engine (Auto or explicit "graphic_card" / "card")
+        if provider in ("graphic_card", "card", "auto"):
+            clean_lower = prompt.lower()
+            is_product_or_tech = (
+                provider in ("graphic_card", "card")
+                or any(kw in clean_lower for kw in (
+                    "insight360", "analytics", "dashboard", "kpi", "chart", "telemetry",
+                    "software", "automation", "workflow", "data", "hms", "hospital",
+                    "pyloom", "feature", "growth", "business intelligence", "ui", "platform"
+                ))
+            )
+            if is_product_or_tech:
+                try:
+                    card_bytes = graphic_card_service.generate_card_image(prompt)
+                    logger.info("Generated high-res 1080x1080 branded graphic card")
+                    return self._save_image(card_bytes, "image/png", "generated", ".png")
+                except Exception as exc:
+                    logger.warning("Graphic card generation failed (%s); falling back to Pollinations", exc)
+
         hf_token = getattr(settings, "HF_TOKEN", "") or os.getenv("HF_TOKEN", "")
 
-        # 1. If Hugging Face token is provided or explicit provider, use Hugging Face FLUX.1-schnell
-        if provider == "huggingface" or (hf_token and provider != "gemini"):
+        # 2. If Hugging Face token is provided or explicit provider, use Hugging Face
+        if provider == "huggingface" or (hf_token and provider not in ("gemini", "pollinations")):
             try:
                 return await self._generate_with_huggingface(prompt)
             except MediaGenerationError as exc:
@@ -65,20 +90,18 @@ class MediaGenerationService:
                     raise
                 logger.info("Hugging Face generation unavailable (%s); falling back to Pollinations", exc)
 
-        # 2. If Gemini image generation is mocked/configured
-        if hasattr(self._client, "interactions") or provider == "gemini":
+        # 3. If Gemini image generation is configured
+        if provider == "gemini":
             try:
                 return await self._generate_with_gemini(prompt)
             except MediaGenerationError as exc:
-                if hasattr(self._client, "interactions"):
-                    raise
                 logger.info(
                     "Gemini image generation unavailable (%s); falling back to Pollinations/FLUX",
                     exc,
                 )
                 return await self._generate_with_pollinations(prompt)
 
-        # 3. Default to enhanced Pollinations engine
+        # 4. Default fallback to enhanced Pollinations engine
         return await self._generate_with_pollinations(prompt)
 
     async def _generate_with_huggingface(self, prompt: str) -> Dict[str, str]:

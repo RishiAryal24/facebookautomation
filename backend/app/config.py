@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     GEMINI_FALLBACK_MODEL: str = "gemini-3.5-flash-lite"
     ENABLE_LOCAL_AI_FALLBACK: bool = False
     GEMINI_IMAGE_MODEL: str = "gemini-2.5-flash-image"
-    IMAGE_GENERATION_PROVIDER: str = "pollinations"
+    IMAGE_GENERATION_PROVIDER: str = "auto"
     POLLINATIONS_MODEL: str = "flux-realism"
     POLLINATIONS_API_KEY: str = ""
     HF_TOKEN: str = ""

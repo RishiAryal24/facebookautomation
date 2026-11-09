@@ -115,3 +115,17 @@ def test_uploaded_image_can_be_attached_to_a_draft(client, monkeypatch, tmp_path
     assert updated.json()["media_url"] == media_url
     assert updated.json()["media_status"] == "uploaded"
     assert (tmp_path / "uploads" / media_url.rsplit("/", 1)[-1]).is_file()
+
+
+def test_generate_image_creates_branded_graphic_card_for_analytics_topic(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "MEDIA_STORAGE_DIR", tmp_path)
+    monkeypatch.setattr(settings, "IMAGE_GENERATION_PROVIDER", "auto")
+    service = MediaGenerationService()
+
+    media = asyncio.run(service.generate_image("Insight360 Business Intelligence and Data Analytics"))
+    asset = service.resolve_local_asset(media["media_url"])
+
+    assert media["mime_type"] == "image/png"
+    assert asset is not None
+    assert asset[0].is_file()
+    assert asset[0].read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
