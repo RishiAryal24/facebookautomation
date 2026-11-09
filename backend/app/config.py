@@ -7,8 +7,12 @@ from cryptography.fernet import Fernet
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=Path(__file__).resolve().parents[1] / ".env",
+        env_file=[
+            Path(__file__).resolve().parents[2] / ".env",
+            Path(__file__).resolve().parents[1] / ".env",
+        ],
         case_sensitive=True,
+        extra="ignore",
     )
 
     PROJECT_NAME: str = "PyLoom Facebook Automation System"

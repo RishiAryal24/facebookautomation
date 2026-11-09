@@ -137,7 +137,11 @@ class MediaGenerationService:
         seed = random.randint(1000, 999999)
         model = getattr(settings, "POLLINATIONS_MODEL", "flux-realism")
         # Ban empty conference rooms and desks, while allowing charts, UI metrics, and data graphics
-        negative_prompt = "empty room, empty conference room, empty table, empty desk, blurry, out of focus, low quality, low resolution, deformed, distorted, watermark, signature"
+        negative_prompt = (
+            "empty room, empty conference room, empty table, empty desk, "
+            "abstract cube, abstract cylinder, glowing block, trophy, plastic lamp, sculpture, "
+            "blurry, out of focus, low quality, low resolution, deformed, distorted, watermark, signature"
+        )
 
         query_params = {
             "width": "1024",

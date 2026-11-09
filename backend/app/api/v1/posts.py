@@ -388,10 +388,9 @@ async def regenerate_post_media(
 
     topic = post.topic or post.content_category or "business technology"
     post.media_generation_prompt = (
-        f"High-impact 3D visual render of {post.media_brief.strip().rstrip('.')}. "
-        f"Theme: {topic}. "
-        "High dynamic range, vivid color saturation, illuminated neon and metallic accents, "
-        "ultra-sharp detail across the entire frame, 8k resolution, cinematic masterpiece."
+        f"High-quality commercial visual: {post.media_brief.strip().rstrip('.')}. "
+        f"Context: {topic}. "
+        "Vibrant colors, modern professional aesthetic, crisp sharp detail, 8k resolution."
     )
     post.media_status = "queued"
     post.media_url = None
