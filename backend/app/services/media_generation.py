@@ -6,6 +6,7 @@ import logging
 import mimetypes
 import os
 import random
+import re
 import time
 import uuid
 from pathlib import Path
@@ -164,14 +165,39 @@ class MediaGenerationService:
                     if res.status_code == 200:
                         content = res.content
                         break
-                    if res.status_code in (402, 503) and attempt == 0:
-                        # Rate limit or temporary service issue; wait 3s and retry once with new seed
+                    if res.status_code == 402 and attempt == 0:
+                        retry_seconds = 15
+                        try:
+                            err_data = res.json()
+                            msg = err_data.get("error", {}).get("message", "")
+                            match = re.search(r"Retry after (\d+)s", msg)
+                            if match:
+                                retry_seconds = int(match.group(1)) + 1
+                        except Exception:
+                            pass
+                        if retry_seconds <= 46:
+                            logger.info(
+                                "Pollinations free rate limit hit; waiting %ds before retrying...",
+                                retry_seconds,
+                            )
+                            await asyncio.sleep(retry_seconds)
+                            seed = random.randint(1000, 999999)
+                            query_params["seed"] = str(seed)
+                            query_string = "&".join(f"{k}={quote(v)}" for k, v in query_params.items())
+                            url = f"https://image.pollinations.ai/prompt/{quote(clean_prompt)}?{query_string}"
+                            continue
+                        raise MediaGenerationError(
+                            f"Pollinations free rate limit reached ({retry_seconds}s remaining). "
+                            "Add a free HF_TOKEN in backend/.env for instant unthrottled generation."
+                        )
+                    if res.status_code == 503 and attempt == 0:
                         await asyncio.sleep(3)
-                        seed = random.randint(1000, 999999)
-                        query_params["seed"] = str(seed)
-                        query_string = "&".join(f"{k}={quote(v)}" for k, v in query_params.items())
-                        url = f"https://image.pollinations.ai/prompt/{quote(clean_prompt)}?{query_string}"
                         continue
+                    if res.status_code == 402:
+                        raise MediaGenerationError(
+                            "Pollinations free tier rate limit reached (1 image every 45s per IP). "
+                            "Wait a moment before regenerating, or add a free HF_TOKEN in backend/.env."
+                        )
                     raise MediaGenerationError(
                         f"Pollinations returned HTTP status {res.status_code}"
                     )
