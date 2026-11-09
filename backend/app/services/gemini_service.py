@@ -431,7 +431,7 @@ three relevant hashtags and no more than one emoji. Do not add a generic slogan.
 
 Return JSON with:
 - caption: complete post text in the requested language
-- image_brief: descriptive photographic scene for an image generator (describe physical environment, lighting, composition, materials, and atmosphere in clear visual terms; do not mention text, typography, logos, UI screens, or specific people)
+- image_brief: a cinematic, subject-specific visual concept for an AI image generator that directly embodies the topic and story of the post (e.g. for analytics/data/Insight360: high-tech command center with glowing translucent holographic data visualization displays and ambient teal glow; for AI/automation: modern illuminated cloud server corridors, robotic workflow lines, or glowing data streams; for healthcare/HMS: advanced clinical diagnostic suite or modern medical imaging bay; for retail/e-commerce: automated smart fulfillment center with high-tech logistics). Describe tangible physical environments, architectural materials, lighting, and camera depth. Never generate an empty wooden desk, notebook, or office plant. Do not include readable text, letters, typography, or brand logos.
 - missing_facts: list of factual details an administrator should verify before publishing
 - structure: short name of the selected structure
 """

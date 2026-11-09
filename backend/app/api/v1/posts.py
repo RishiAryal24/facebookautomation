@@ -388,10 +388,10 @@ async def regenerate_post_media(
 
     topic = post.topic or post.content_category or "business technology"
     post.media_generation_prompt = (
-        f"Professional commercial photography of {post.media_brief.strip().rstrip('.')}. "
-        f"Topic context: {topic}. "
-        "Contemporary architectural and business setting, realistic natural ambient lighting, "
-        "subtle corporate navy and warm neutral color grading, shot on 35mm lens, high aesthetic, photorealistic, 8k."
+        f"Award-winning commercial photography, {post.media_brief.strip().rstrip('.')}. "
+        f"Theme: {topic}. "
+        "Cinematic lighting, high-end production value, rich architectural texture, "
+        "depth of field, subtle corporate navy and warm neutral accents, photorealistic, 8k resolution."
     )
     post.media_status = "queued"
     post.media_url = None

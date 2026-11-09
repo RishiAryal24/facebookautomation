@@ -349,10 +349,10 @@ class AutomationEngine:
         if include_image:
             visual_topic = topic or category or "business technology"
             image_prompt = (
-                "Professional commercial photography of {image_brief}. "
-                f"Topic context: {visual_topic}. "
-                "Contemporary architectural and business setting, realistic natural ambient lighting, "
-                "subtle corporate navy and warm neutral color grading, shot on 35mm lens, high aesthetic, photorealistic, 8k."
+                "Award-winning commercial photography, {image_brief}. "
+                f"Theme: {visual_topic}. "
+                "Cinematic lighting, high-end production value, rich architectural texture, "
+                "depth of field, subtle corporate navy and warm neutral accents, photorealistic, 8k resolution."
             )
 
         ai_post = await gemini_service.generate_social_post(

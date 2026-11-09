@@ -72,7 +72,7 @@ class MediaGenerationService:
         clean_prompt = " ".join(prompt.strip().split())
         seed = random.randint(1000, 999999)
         model = getattr(settings, "POLLINATIONS_MODEL", "flux-realism")
-        negative_prompt = "text, typography, watermark, logo, deformed, distorted, cartoon, blurry, low resolution, bad hands, fake artifacts"
+        negative_prompt = "text, typography, watermark, logo, deformed, distorted, cartoon, blurry, low resolution, bad hands, fake artifacts, messy handwriting"
 
         query_params = {
             "width": "1024",
