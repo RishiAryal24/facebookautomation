@@ -366,3 +366,40 @@ def test_social_post_retries_overlong_caption_with_a_tighter_target():
     assert service._word_count(result["message"]) == 160
     assert "152-168 words" in calls[1]["contents"]
     assert "detail249" in calls[1]["contents"]
+
+
+def test_social_post_trims_overlong_candidate_to_requested_range_when_retry_also_overlong():
+    service = GeminiService()
+    calls = []
+    # Both attempt 0 and attempt 1 return overlong captions (e.g. ~400 and ~350 words for detailed 200-300)
+    overlong_sentence = "Modern healthcare administration demands high precision in patient management. "
+    attempt_0 = overlong_sentence * 40
+    attempt_1 = overlong_sentence * 35
+    captions = [attempt_0, attempt_1]
+
+    class Models:
+        async def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                text=json.dumps(
+                    {
+                        "caption": captions[len(calls) - 1],
+                        "image_brief": "A clean editorial visual of hospital workflows.",
+                        "missing_facts": [],
+                        "structure": "educational",
+                    }
+                )
+            )
+
+    service._client = SimpleNamespace(aio=SimpleNamespace(models=Models()))
+    result = asyncio.run(
+        service.generate_social_post(
+            topic="Hospital Operations",
+            language="en",
+            content_length="detailed",
+        )
+    )
+
+    assert len(calls) == 2
+    word_count = service._word_count(result["message"])
+    assert 200 <= word_count <= 300

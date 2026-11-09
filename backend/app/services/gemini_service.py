@@ -308,6 +308,45 @@ Incoming comment:
             "storytelling": (180, 350),
         }[content_length]
 
+    @classmethod
+    def _trim_to_word_range(cls, text: str, word_min: int, word_max: int) -> Optional[str]:
+        current_count = cls._word_count(text)
+        if word_min <= current_count <= word_max:
+            return text
+        if current_count < word_min:
+            return None
+
+        # 1. Paragraph-level trimming (preserving paragraph breaks)
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+        if len(paragraphs) > 2:
+            trimmed_paras = list(paragraphs)
+            while len(trimmed_paras) > 2 and cls._word_count("\n\n".join(trimmed_paras)) > word_max:
+                trimmed_paras.pop(-2)
+                c = cls._word_count("\n\n".join(trimmed_paras))
+                if word_min <= c <= word_max:
+                    return "\n\n".join(trimmed_paras)
+
+        # 2. Sentence-level trimming (preserving final CTA/hashtags)
+        sentences = re.split(r'(?<=[.!?।])\s+', text)
+        if len(sentences) > 2:
+            trimmed_sentences = list(sentences)
+            while len(trimmed_sentences) > 2 and cls._word_count(" ".join(trimmed_sentences)) > word_max:
+                trimmed_sentences.pop(-2)
+                c = cls._word_count(" ".join(trimmed_sentences))
+                if word_min <= c <= word_max:
+                    return " ".join(trimmed_sentences)
+
+        # 3. Fallback: remove sentences from the end
+        if len(sentences) > 1:
+            trimmed_sentences = list(sentences)
+            while len(trimmed_sentences) > 1 and cls._word_count(" ".join(trimmed_sentences)) > word_max:
+                trimmed_sentences.pop(-1)
+                c = cls._word_count(" ".join(trimmed_sentences))
+                if word_min <= c <= word_max:
+                    return " ".join(trimmed_sentences)
+
+        return None
+
     async def generate_social_post(
         self,
         brand_context: str = "",
@@ -377,6 +416,7 @@ Language: {language_name}
 Brand tone: {tone}
 Category: {category or "Choose the best fit"}
 Caption length: {content_length}, exactly {word_minimum}-{word_maximum} words.
+Target length guidance: aim for approximately {(word_minimum + word_maximum) // 2} words. Write concisely and strictly do not exceed {word_maximum} words.
 Topic-specific direction: {topic_guidance or "Use a concrete, relevant business situation and explain it accurately."}
 Past published/generated captions (avoid repeated hooks, structure, and wording):
 {chr(10).join(f"- {item[:700]}" for item in (recent_posts or [])[:10]) or "None"}
@@ -397,6 +437,7 @@ Return JSON with:
 """
         request_prompt = prompt
         last_error = "Gemini returned invalid post data"
+        candidates: List[tuple[str, Dict[str, Any]]] = []
         for attempt in range(2):
             response = await self._generate_content_with_fallback(
                 operation="social post generation",
@@ -429,6 +470,7 @@ Return JSON with:
             elif not isinstance(image_brief, str) or not image_brief.strip():
                 last_error = "Gemini did not return a usable visual concept"
             else:
+                candidates.append((message, result))
                 count = self._word_count(message)
                 if not word_minimum <= count <= word_maximum:
                     last_error = (
@@ -463,6 +505,44 @@ Return JSON with:
                             "source": "gemini_api",
                         }
             if attempt == 1:
+                # If validation failed on final attempt, check if any overlong candidate can be trimmed cleanly
+                for cand_message, cand_result in reversed(candidates):
+                    trimmed = self._trim_to_word_range(cand_message, word_minimum, word_maximum)
+                    if trimmed:
+                        normalized_trimmed = re.sub(r"\s+", " ", trimmed).casefold()
+                        if not any(
+                            SequenceMatcher(
+                                None,
+                                normalized_trimmed,
+                                re.sub(r"\s+", " ", recent).casefold(),
+                            ).ratio() >= 0.9
+                            for recent in (recent_posts or [])
+                        ):
+                            cand_image_brief = cand_result.get("image_brief") or "A clean, modern brand visual."
+                            returned_missing_facts = cand_result.get("missing_facts", [])
+                            if isinstance(returned_missing_facts, list):
+                                missing_facts.extend(
+                                    fact.strip()
+                                    for fact in returned_missing_facts
+                                    if isinstance(fact, str) and fact.strip()
+                                )
+                            logger.info(
+                                "Trimmed overlong caption from %d to %d words for %s (%d-%d)",
+                                self._word_count(cand_message),
+                                self._word_count(trimmed),
+                                content_length,
+                                word_minimum,
+                                word_maximum,
+                            )
+                            return {
+                                "message": trimmed.strip(),
+                                "image_brief": str(cand_image_brief).strip(),
+                                "missing_facts": list(dict.fromkeys(missing_facts)),
+                                "structure": str(cand_result.get("structure") or "educational"),
+                                "media_url": None,
+                                "source": "gemini_api",
+                            }
+
                 raise GeminiServiceError(last_error)
             target_minimum = max(word_minimum, (word_minimum + word_maximum) // 2 - 8)
             target_maximum = min(word_maximum, (word_minimum + word_maximum) // 2 + 8)
